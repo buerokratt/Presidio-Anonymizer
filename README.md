@@ -7,6 +7,7 @@ A privacy-focused Flask API server that combines Microsoft Presidio with the Est
 * **Estonian NER Support** : Integrates `tartuNLP/EstBERT_NER_v2` for Estonian named entity recognition
 * **Multilingual** : Supports Estonian via sPaCy
 * **Custom Estonian Patterns** : Recognizes Estonian-specific entities like personal codes (isikukood), car numbers, and phone numbers
+* **Batch Processing** : Process multiple texts in a single request for efficient anonymization
 * **Allowlist/Denylist Support** : Fine-tune detection by excluding false positives or forcing specific words to be detected as PII
 * **REST API** : Easy-to-use HTTP endpoints for text analysis and anonymization
 * **Docker Support** : Ready-to-deploy containerized application
@@ -60,10 +61,10 @@ docker-compose up --build -d
 3. Test the API:
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
+curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Minu nimi on Jaan Tamm ja ma elan Tallinnas.",
+    "texts": ["Minu nimi on Jaan Tamm ja ma elan Tallinnas."],
     "language": "xx"
 }'
 ```
@@ -102,13 +103,23 @@ Returns API status and configuration information.
 POST /anonymize
 ```
 
-Analyzes and replaces PII entities with anonymized placeholders.
+Analyzes and replaces PII entities with anonymized placeholders. **Accepts an array of texts** and returns an array of results.
+
+**Batch Processing:**
+
+- Process multiple texts in a single request
+- Same configuration (anonymizers, allowlist, denylist) applies to all texts
+- Each text is processed independently
+- Results maintain the same order as input texts
 
 **Request Body:**
 
 ```json
 {
-  "text": "Minu nimi on Jaan Tamm ja ma elan Tallinnas. Projekti nimi on Butterfly.",
+  "texts": [
+    "Minu nimi on Jaan Tamm ja ma elan Tallinnas. Projekti nimi on Liblikas.",
+    "Mari Mets töötab Tartu Ülikoolis."
+  ],
   "language": "xx",
   "anonymizers": {
     "PERSON": {"type": "replace", "new_value": "[ISIK]"},
@@ -117,7 +128,7 @@ Analyzes and replaces PII entities with anonymized placeholders.
   },
   "entities": ["PERSON", "LOCATION"],
   "allowlist": ["Tallinn"],
-  "denylist": ["Butterfly"]
+  "denylist": ["Liblikas"]
 }
 ```
 
@@ -127,7 +138,7 @@ Apply the same anonymization to all detected entities:
 
 ```json
 {
-  "text": "Mu nimi on Mart Kask ja email on mart@example.com",
+  "texts": ["Mu nimi on Mart Kask ja email on mart@example.com"],
   "language": "xx",
   "anonymizers": {
     "DEFAULT": {
@@ -142,7 +153,7 @@ Or use `DEFAULT` with entity-specific overrides:
 
 ```json
 {
-  "text": "Contact John at john@example.com or call +372 5555 5555",
+  "texts": ["Võta ühendust Peeter Kukk, email peeter@example.com või helistades +372 5555 5555"],
   "language": "xx",
   "anonymizers": {
     "DEFAULT": {"type": "hash", "hash_type": "sha256"},
@@ -154,7 +165,7 @@ Or use `DEFAULT` with entity-specific overrides:
 
 **Parameters:**
 
-* `text` (required, string): Text to anonymize
+* `texts` (required, array of strings): **Array of texts to anonymize** - each text is processed independently
 * `language` (optional, string, default: "xx"): Language code
 * `anonymizers` (optional, object): Custom anonymization operators for each entity type
   * `type`: Anonymization method - "replace", "mask", "redact", or "encrypt"
@@ -169,25 +180,43 @@ Or use `DEFAULT` with entity-specific overrides:
 
 **Response:**
 
+Returns an array of results, one for each input text:
+
 ```json
 {
-  "items": [
+  "results": [
     {
-      "end": 22,
-      "entity_type": "PERSON",
-      "operator": "replace",
-      "start": 13,
-      "text": "[ISIK]"
+      "text": "Minu nimi on [ISIK] ja ma elan Tallinnas. Projekti nimi on [KONFIDENTSIAALNE].",
+      "items": [
+        {
+          "end": 22,
+          "entity_type": "PERSON",
+          "operator": "replace",
+          "start": 13,
+          "text": "[ISIK]"
+        },
+        {
+          "end": 76,
+          "entity_type": "DENYLIST_MATCH",
+          "operator": "replace",
+          "start": 67,
+          "text": "[KONFIDENTSIAALNE]"
+        }
+      ]
     },
     {
-      "end": 76,
-      "entity_type": "DENYLIST_MATCH",
-      "operator": "replace",
-      "start": 67,
-      "text": "[KONFIDENTSIAALNE]"
+      "text": "[ISIK] töötab Tartu Ülikoolis.",
+      "items": [
+        {
+          "end": 10,
+          "entity_type": "PERSON",
+          "operator": "replace",
+          "start": 0,
+          "text": "[ISIK]"
+        }
+      ]
     }
-  ],
-  "text": "Minu nimi on [ISIK] ja ma elan Tallinnas. Project codename is [KONFIDENTSIAALNE]."
+  ]
 }
 ```
 
@@ -200,13 +229,13 @@ Presidio supports multiple anonymization methods. You can specify operators per 
 ```json
    {
      "anonymizers": {
-       "PERSON": {"type": "replace", "new_value": "[PERSON]"},
-       "DEFAULT": {"type": "replace", "new_value": "[REDACTED]"}
+       "PERSON": {"type": "replace", "new_value": "[ISIK]"},
+       "DEFAULT": {"type": "replace", "new_value": "[VARJATUD]"}
      }
    }
 ```
 
-1. **Redact** : Completely remove the PII text
+2. **Redact** : Completely remove the PII text
 
 ```json
    {
@@ -218,7 +247,7 @@ Presidio supports multiple anonymization methods. You can specify operators per 
 
 * Removes the entity entirely from the text
 
-1. **Mask** : Replace characters with masking character
+3. **Mask** : Replace characters with masking character
 
 ```json
    {
@@ -237,7 +266,7 @@ Presidio supports multiple anonymization methods. You can specify operators per 
 * `chars_to_mask`: Number of characters to mask
 * `from_end`: Whether to mask from the end (default: `true`)
 
-1. **Hash** : Replace with cryptographic hash
+4. **Hash** : Replace with cryptographic hash
 
 ```json
    {
@@ -253,7 +282,7 @@ Presidio supports multiple anonymization methods. You can specify operators per 
 * `hash_type`: Hash algorithm - `sha256`, `sha512`, or `md5`
 * Produces consistent hash for same input
 
-1. **Encrypt** : Replace with AES encrypted value (reversible)
+5. **Encrypt** : Replace with AES encrypted value (reversible)
 
 ```json
    {
@@ -269,7 +298,7 @@ Presidio supports multiple anonymization methods. You can specify operators per 
 * `key`: 128-bit, 192-bit, or 256-bit encryption key
 * Allows decryption with the same key
 
-1. **Keep** : Retain original value (no anonymization)
+6. **Keep** : Retain original value (no anonymization)
 
 ```json
    {
@@ -299,7 +328,7 @@ Returns list of all entity types that can be detected for a given language.
 {
   "entities": ["PERSON", "ORGANIZATION", "LOCATION", "EMAIL_ADDRESS", ...],
   "language": "xx",
-  "count": 16
+  "count": 15
 }
 ```
 
@@ -321,7 +350,7 @@ Returns list of all active recognizers for a given language.
 {
   "recognizers": ["EstBERT_NER_Recognizer", "EstonianPersonalCode", "EstonianPhoneNumbers", ...],
   "language": "xx",
-  "count": 10
+  "count": 18
 }
 ```
 
@@ -355,18 +384,18 @@ Use the allowlist to prevent common words or domain-specific terms from being fl
 **Example: Company and product names**
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
+curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Microsoft Azure is used by Acme Corp for cloud services.",
-    "allowlist": ["Microsoft", "Azure", "Acme Corp"]
+    "texts": ["Microsoft Azure teenust kasutab Eesti Energia oma pilvelahenduste jaoks."],
+    "allowlist": ["Microsoft", "Azure", "Eesti Energia"]
   }'
 ```
 
 **Use cases:**
 
 * Company names that shouldn't be anonymized
-* Common place names (e.g., "Tallinn", "Estonia")
+* Common place names (e.g., "Tallinn", "Tartu")
 * Product names or brands
 * Technical terms that trigger false positives
 
@@ -380,10 +409,10 @@ Use the denylist to ensure specific sensitive terms are always detected as PII:
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Project Falcon is scheduled for Q3. Contact Alpha team.",
-    "denylist": ["Falcon", "Alpha"],
+    "texts": ["Projekt Öökull on salastatud. Võta ühendust Kaarel Kasega detailide osas."],
+    "denylist": ["Öökull", "salastatud"],
     "anonymizers": {
-      "DENYLIST_MATCH": {"type": "replace", "new_value": "[REDACTED]"}
+      "DENYLIST_MATCH": {"type": "replace", "new_value": "[VARJATUD]"}
     }
   }'
 ```
@@ -401,18 +430,18 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "John Smith from Microsoft works on Project Phoenix in Tallinn.",
-    "allowlist": ["Microsoft", "Tallinn"],
-    "denylist": ["Phoenix"],
+    "texts": ["Jaan Tamm Microsoft Eesti esindusest töötab projektil Phönix Tallinnas."],
+    "allowlist": ["Microsoft Eesti", "Tallinn"],
+    "denylist": ["Phönix"],
     "entities": ["PERSON", "ORGANIZATION", "LOCATION"]
   }'
 ```
 
 **Result:**
 
-* "John Smith" → anonymized (detected as PERSON)
-* "Microsoft" → kept (in allowlist)
-* "Phoenix" → anonymized (in denylist)
+* "Jaan Tamm" → anonymized (detected as PERSON)
+* "Microsoft Eesti" → kept (in allowlist)
+* "Phönix" → anonymized (in denylist)
 * "Tallinn" → kept (in allowlist)
 
 ## Configuration
@@ -525,7 +554,6 @@ services:
       - TRANSFORMERS_CACHE=/root/.cache/huggingface
     volumes:
       - ./config:/app/config
-      - stanza_cache:/root/stanza_resources
       - transformers_cache:/root/.cache/huggingface
     deploy:
       resources:
@@ -586,7 +614,22 @@ The container includes built-in health checks that verify API availability:
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Jaan Tamm (isikukood: 38001085718) töötab AS Eesti Firma juures Tallinnas.",
+    "texts": ["Jaan Tamm (isikukood: 38001085718) töötab AS Eesti Firma juures Tallinnas."],
+    "language": "xx"
+  }'
+```
+
+**Batch Processing Multiple Texts:**
+
+```bash
+curl -X POST http://localhost:8000/anonymize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "texts": [
+      "Jaan Tamm (isikukood: 38001085718) töötab AS Eesti Firma juures Tallinnas.",
+      "Mari Mets saadab emaili mari.mets@example.ee",
+      "Kontakttelefon: +372 5555 5555"
+    ],
     "language": "xx"
   }'
 ```
@@ -599,7 +642,7 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Mu nimi on Mart Kask ja email on mart@example.com",
+    "texts": ["Mu nimi on Mart Kask ja email on mart.kask@example.ee"],
     "language": "xx",
     "anonymizers": {
       "DEFAULT": {
@@ -614,8 +657,12 @@ curl -X POST http://localhost:8000/anonymize \
 
 ```json
 {
-  "text": "Mu nimi on [XXX] ja email on [XXX]",
-  "items": [...]
+  "results": [
+    {
+      "text": "Mu nimi on [XXX] ja email on [XXX]",
+      "items": [...]
+    }
+  ]
 }
 ```
 
@@ -625,7 +672,7 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Mu nimi on Mart Kask",
+    "texts": ["Mu nimi on Mart Kask ja elan Tartus"],
     "language": "xx",
     "anonymizers": {
       "DEFAULT": {
@@ -640,8 +687,12 @@ curl -X POST http://localhost:8000/anonymize \
 
 ```json
 {
-  "text": "Mu nimi on 8c9a6b5e3d2f1a4b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
-  "items": [...]
+  "results": [
+    {
+      "text": "Mu nimi on 8c9a6b5e3d2f1a4b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b ja elan 3f8a2c9d1e4b7a5c8d0f2e1b3a6c9d7e4f8a2b5c1d3e6f9a0b2c5d8e1f4a7b",
+      "items": [...]
+    }
+  ]
 }
 ```
 
@@ -651,13 +702,19 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Mu nimi on Mart Kask",
+    "texts": ["Võta ühendust Kalle Kallasega telefonil +372 5123 4567"],
     "language": "xx",
     "anonymizers": {
-      "DEFAULT": {
+      "PERSON": {
         "type": "mask",
         "masking_char": "*",
-        "chars_to_mask": 5,
+        "chars_to_mask": 6,
+        "from_end": true
+      },
+      "PHONE_NUMBER": {
+        "type": "mask",
+        "masking_char": "X",
+        "chars_to_mask": 4,
         "from_end": true
       }
     }
@@ -668,8 +725,12 @@ curl -X POST http://localhost:8000/anonymize \
 
 ```json
 {
-  "text": "Mu nimi on Mart*****",
-  "items": [...]
+  "results": [
+    {
+      "text": "Võta ühendust Kalle K****** telefonil +372 5123 XXXX",
+      "items": [...]
+    }
+  ]
 }
 ```
 
@@ -679,11 +740,11 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Contact Kalle Kask at kalle@example.com",
+    "texts": ["Võta ühendust Kalle Kask aadressil kalle@example.ee"],
     "language": "xx",
     "anonymizers": {
       "PERSON": {"type": "redact"},
-      "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL REMOVED]"}
+      "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL EEMALDATUD]"}
     }
   }'
 ```
@@ -692,8 +753,12 @@ curl -X POST http://localhost:8000/anonymize \
 
 ```json
 {
-  "text": "Contact  at [EMAIL REMOVED]",
-  "items": [...]
+  "results": [
+    {
+      "text": "Võta ühendust  aadressil [EMAIL EEMALDATUD]",
+      "items": [...]
+    }
+  ]
 }
 ```
 
@@ -703,7 +768,7 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Confidential ID: 38001085718",
+    "texts": ["Töötaja isikukood: 38001085718"],
     "language": "xx",
     "anonymizers": {
       "EE_PERSONAL_CODE": {
@@ -720,10 +785,10 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Contact Mari Maasikas at mari@example.com or +372 5555 5555",
+    "texts": ["Võta ühendust Mari Maasikas aadressil mari.maasikas@example.ee või helistades +372 5555 5555"],
     "language": "xx",
     "anonymizers": {
-      "PERSON": {"type": "replace", "new_value": "[NAME]"},
+      "PERSON": {"type": "replace", "new_value": "[NIMI]"},
       "EMAIL_ADDRESS": {"type": "hash", "hash_type": "sha256"},
       "PHONE_NUMBER": {"type": "mask", "masking_char": "X", "chars_to_mask": 4, "from_end": true}
     }
@@ -734,8 +799,12 @@ curl -X POST http://localhost:8000/anonymize \
 
 ```json
 {
-  "text": "Contact [NAME] at a3b2c1d4e5f6... or +372 5555 XXXX",
-  "items": [...]
+  "results": [
+    {
+      "text": "Võta ühendust [NIMI] aadressil a3b2c1d4e5f6... või helistades +372 5555 XXXX",
+      "items": [...]
+    }
+  ]
 }
 ```
 
@@ -745,11 +814,11 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "John Smith lives in Tallinn. Email: john@example.com, Phone: +372 5555 5555",
+    "texts": ["Jaan Tamm elab Tallinnas. Email: jaan.tamm@example.ee, Telefon: +372 5555 5555"],
     "language": "xx",
     "anonymizers": {
       "DEFAULT": {"type": "hash", "hash_type": "sha256"},
-      "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL PROTECTED]"},
+      "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL KAITSTUD]"},
       "LOCATION": {"type": "keep"}
     }
   }'
@@ -759,20 +828,26 @@ curl -X POST http://localhost:8000/anonymize \
 
 ```json
 {
-  "text": "a1b2c3d4e5f6... lives in Tallinn. Email: [EMAIL PROTECTED], Phone: f9e8d7c6b5a4...",
-  "items": [...]
+  "results": [
+    {
+      "text": "a1b2c3d4e5f6... elab Tallinnas. Email: [EMAIL KAITSTUD], Telefon: f9e8d7c6b5a4...",
+      "items": [...]
+    }
+  ]
 }
 ```
 
 ### Allowlist and Denylist Examples
 
+**Using Allowlist to Preserve Important Terms:**
+
 ```bash
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Mari Maasikas from Estonian Business Registry works in Tallinn.",
+    "texts": ["Mari Maasikas Äriregistri esindusest töötab Tallinnas."],
     "language": "xx",
-    "allowlist": ["Estonian Business Registry", "Tallinn"]
+    "allowlist": ["Äriregister", "Tallinn"]
   }'
 ```
 
@@ -782,9 +857,9 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Project Nightingale is classified. Contact Sarah for details.",
+    "texts": ["Projekt Öökull on salastatud. Võta ühendust Kaarel Kasega detailide osas."],
     "language": "xx",
-    "denylist": ["Nightingale", "classified"]
+    "denylist": ["Öökull", "salastatud"]
   }'
 ```
 
@@ -794,19 +869,33 @@ curl -X POST http://localhost:8000/anonymize \
 curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Contact Kalle Kask at Microsoft Estonia about Project Phoenix. Meeting in Tallinn tomorrow.",
+    "texts": [
+      "Võta ühendust Kalle Kask Microsoft Eesti esindusest projektiga Phönix seoses. Kohtumine Tallinnas homme.",
+      "Mari Mets töötab samuti projektil Phönix meie Tartu kontorist."
+    ],
     "language": "xx",
-    "allowlist": ["Microsoft Estonia", "Tallinn"],
-    "denylist": ["Phoenix"],
+    "allowlist": ["Microsoft Eesti", "Tallinn", "Tartu"],
+    "denylist": ["Phönix"],
     "anonymizers": {
-      "PERSON": {"type": "replace", "new_value": "[NAME]"},
-      "DENYLIST_MATCH": {"type": "replace", "new_value": "[CLASSIFIED]"}
+      "PERSON": {"type": "replace", "new_value": "[NIMI]"},
+      "DENYLIST_MATCH": {"type": "replace", "new_value": "[SALASTATUD]"}
     }
   }'
 ```
 
 **Result:**
 
-```
-Contact [NAME] at Microsoft Estonia about Project [CLASSIFIED]. Meeting in Tallinn tomorrow.
+```json
+{
+  "results": [
+    {
+      "text": "Võta ühendust [NIMI] Microsoft Eesti esindusest projektiga [SALASTATUD] seoses. Kohtumine Tallinnas homme.",
+      "items": [...]
+    },
+    {
+      "text": "[NIMI] töötab samuti projektil [SALASTATUD] meie Tartu kontorist.",
+      "items": [...]
+    }
+  ]
+}
 ```
