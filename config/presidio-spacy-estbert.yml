@@ -16,16 +16,6 @@ nlp_configuration:
   ner_model_configuration:
     labels_to_ignore:
       - O
-      - CARDINAL
-      - ORDINAL
-      - QUANTITY
-      - PERCENT
-      - MONEY
-      - LANGUAGE
-      - EVENT
-      - WORK_OF_ART
-      - LAW
-      - PRODUCT
     low_score_entity_names:
       - ORG
       - ORGANIZATION

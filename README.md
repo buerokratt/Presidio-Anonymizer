@@ -60,7 +60,7 @@ docker-compose up --build -d
 3. Test the API:
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
+curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Minu nimi on Jaan Tamm ja ma elan Tallinnas.",
@@ -355,7 +355,7 @@ Use the allowlist to prevent common words or domain-specific terms from being fl
 **Example: Company and product names**
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
+curl -X POST http://localhost:8001/anonymize \
   -H "Content-Type: application/json" \
   -d '{
     "text": "Microsoft Azure is used by Acme Corp for cloud services.",
@@ -398,7 +398,7 @@ curl -X POST http://localhost:8000/anonymize \
 ### Combined Usage
 
 ```bash
-curl -X POST http://localhost:8000/anonymize \
+curl -X POST http://localhost:8001/anonymize \
   -H "Content-Type: application/json" \
   -d '{
     "text": "John Smith from Microsoft works on Project Phoenix in Tallinn.",
