@@ -41,4 +41,4 @@ urllib3==2.5.0
 # onnx runtime
 optimum[onnx]==2.0.0
 onnxruntime==1.19.2 
-torch==2.4.0
+torch==2.8.0
