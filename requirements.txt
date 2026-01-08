@@ -35,7 +35,7 @@ estnltk==1.7.2
 setuptools==78.1.1
 zipp==3.19.1
 requests==2.32.4
-werkzeug==3.0.3
+werkzeug==3.1.5
 urllib3==2.5.0
 
 # onnx runtime
