@@ -41,7 +41,7 @@ nlp_configuration:
 
 # EstBERT NER Model Configuration
 estbert_configuration:
-  model_name: "buerokrattRIA/EstBert_NER_SyntheticGov"
+  model_name: "buerokrattRIA/xlm-roberta-NER-syntheticGov"
   supported_language: xx
   entity_mapping:
     LOC: LOCATION
