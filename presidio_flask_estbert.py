@@ -12,6 +12,7 @@ from presidio_analyzer.entity_recognizer import EntityRecognizer
 from typing import List, Optional
 import logging
 import os
+import re
 
 logger = logging.getLogger("presidio-flask-api")
 
@@ -81,11 +82,16 @@ class EstBERTRecognizerONNX(EntityRecognizer):
             logger.info("Model loaded with ONNX optimization")
 
             # Create pipeline with ONNX model
+            # "simple" does not merge sentencepiece continuations for XLM-R, so
+            # a name came back as several fragments scored separately - the ones
+            # below the threshold were dropped and the rest of the name survived
+            # in clear text. "first" takes the first subword's label for the
+            # whole word and keeps names intact.
             self.nlp_pipeline = pipeline(
                 "ner",
                 model=self.model,  # type: ignore
                 tokenizer=self.tokenizer,
-                aggregation_strategy="simple",
+                aggregation_strategy="first",
                 device=-1,  # CPU
             )
 
@@ -165,6 +171,35 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         )
         return windows
 
+    def _normalize_span(self, text: str, start: int, end: int) -> List[tuple[int, int]]:
+        """Tidy one model span into zero or more spans worth reporting.
+
+        Word-level aggregation is greedy: it takes in trailing punctuation and
+        runs two neighbouring names together across a comma. It also labels an
+        e-mail address as a person, because the local part often is a first
+        name - and that span then outranks the e-mail recognizer's, replacing a
+        [E-POST] placeholder with [ISIK]. So each span is split on separators,
+        stripped back to alphanumeric edges, and handed to the dedicated
+        recognizers when it looks like an address rather than a name.
+        """
+        spans = []
+        for chunk in re.finditer(r"[^,;]+", text[start:end]):
+            piece_start = start + chunk.start()
+            piece_end = start + chunk.end()
+
+            while piece_start < piece_end and not text[piece_start].isalnum():
+                piece_start += 1
+            while piece_end > piece_start and not text[piece_end - 1].isalnum():
+                piece_end -= 1
+
+            if piece_end <= piece_start:
+                continue
+            # An e-mail or URL is never a person or an organisation name.
+            if "@" in text[piece_start:piece_end]:
+                continue
+            spans.append((piece_start, piece_end))
+        return spans
+
     def analyze(
         self, text: str, entities: List[str], nlp_artifacts: NlpArtifacts | None = None
     ) -> List[RecognizerResult]:
@@ -205,11 +240,16 @@ class EstBERTRecognizerONNX(EntityRecognizer):
                 )
                 presidio_entity = self.label_mapping.get(entity_type, entity_type)
 
-                if presidio_entity in entities:
+                if presidio_entity not in entities:
+                    continue
+
+                for start, end in self._normalize_span(
+                    text, entity["start"], entity["end"]
+                ):
                     result = RecognizerResult(
                         entity_type=presidio_entity,
-                        start=entity["start"],
-                        end=entity["end"],
+                        start=start,
+                        end=end,
                         score=entity["score"],
                     )
                     results.append(result)

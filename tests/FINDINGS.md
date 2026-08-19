@@ -21,13 +21,13 @@ verified against the rebuilt container before the next is started.
 | # | Finding | Severity | Status |
 |---|---|---|---|
 | 1 | Long input loses all transformer detections | Leak | ✅ fixed |
-| 2 | Names split at subword boundaries | Leak | ⏳ in progress |
+| 2 | Names split at subword boundaries | Leak | ✅ fixed |
 | 3 | `IP_ADDRESS` never anonymised | Leak | ⬜ not started |
 | 4 | Denylist discarded on span overlap | Leak | ⬜ not started |
-| 5 | Case-form synthesis is a no-op | Leak | ⬜ not started |
+| 5 | Case-form synthesis is a no-op | Leak | ⏳ in progress |
 | 6 | All `PERSON` false positives come from spaCy | Precision | ⬜ not started |
 | 7 | Global 0.83 threshold cuts agency names | Recall | ⬜ not started |
-| 8 | Case endings survive outside the placeholder | Output | ⬜ not started |
+| 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
 | 9 | Car-plate regex matches money | Precision | ⬜ not started |
 | 10 | `hash_type` accepted and ignored | Contract | ⬜ not started |
 | 11 | In-handler validation returns 500 | Contract | ⬜ not started |
@@ -111,6 +111,42 @@ for a silently dropped tail.
 - **Case**: `H01`
 
 ### 2. Names split at subword boundaries; fragments fall below threshold — LEAK
+
+> **✅ FIXED** — `presidio_flask_estbert.py`. `aggregation_strategy` is now
+> `"first"`, which labels a whole word from its first subword instead of scoring
+> fragments separately.
+>
+> `"first"` alone over-captures, so it needed a companion `_normalize_span()`
+> pass. Three regressions it introduced, and what the pass does about them:
+>
+> | `"first"` alone | after normalization |
+> |---|---|
+> | `[PII] esitasid [PII] ja [PII]` — two names merged, comma and full stop eaten | `[PII] esitasid [PII], [PII] ja [PII].` |
+> | `e-post [ISIK]` — email claimed as PERSON, outranking the email recognizer | `e-post [E-POST]` |
+> | `Jaan Tamm,` — span includes the comma | `Jaan Tamm` |
+>
+> The pass splits each model span on `,;`, strips it back to alphanumeric edges,
+> and discards spans containing `@` so the dedicated recognizers keep ownership
+> of addresses.
+>
+> Verified: `[PII] esitasid [PII], [PII] ja [PII].` — every name anonymised, no
+> fragment left in clear text. Case `H04` passes.
+>
+> | | baseline | after |
+> |---|---|---|
+> | Strict P / R / F1 | 0.707 / 0.823 / 0.760 | **0.802 / 0.849 / 0.825** |
+> | Exact / partial spans | 65 / 7 | **73 / 0** |
+> | False positives | 20 | 18 |
+> | `ORGANIZATION` F1 | 0.708 | 0.735 |
+> | `PERSON` F1 | 0.762 | 0.780 |
+> | Behaviour cases | 14/24 | **16/24** |
+>
+> Word-level aggregation also consumes the Estonian case ending, which is what
+> finding 8 was about — so that one is fixed here too, and strict now equals
+> relaxed because there are no partial spans left.
+>
+> Known tradeoff: a genuine entity name containing a comma would be split into
+> two placeholders. Benign, and no Estonian agency name in the suite is affected.
 
 `aggregation_strategy="simple"` does not merge sentencepiece continuations for
 XLM-R. Fragments are scored separately, sub-threshold ones are dropped, and the
@@ -241,6 +277,19 @@ Töötukassa              0.97 kept     Rahvastiku-      0.61 cut
 - 8 of the 14 misses are `ORGANIZATION`.
 
 ### 8. Case endings survive outside the placeholder
+
+> **✅ FIXED** as a side effect of finding 2. Word-level aggregation covers the
+> whole word including its case suffix, and `_normalize_span()` keeps the
+> surrounding punctuation out of the span.
+>
+> ```
+> before  [ISIK] elab [GPE], kolis sinna [GPE]st ja töötas varem [GPE]s
+>         [ORGANISATSIOON]s.
+> after   [ISIK] elab [GPE], kolis sinna [GPE] ja töötas varem [GPE]
+>         [ORGANISATSIOON].
+> ```
+>
+> All 7 partial span matches became exact; the suite now reports 0 partial spans.
 
 The model tags the stem and leaves the Estonian case suffix behind. All 7 partial
 span matches are this shape. No identity leak, but ungrammatical output, and the
