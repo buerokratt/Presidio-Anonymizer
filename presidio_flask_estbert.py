@@ -16,6 +16,14 @@ import re
 
 logger = logging.getLogger("presidio-flask-api")
 
+# Per-entity score thresholds read from the config. AnalyzerEngine only supports
+# one threshold for everything, so the engine is built with the lowest threshold
+# in play and apply_score_thresholds() does the real per-entity filtering. The
+# app builds exactly one analyzer per process, so these live at module level
+# instead of being threaded through every call site.
+entity_score_thresholds: dict[str, float] = {}
+default_score_threshold: float = 0.8
+
 
 class EstBERTRecognizerONNX(EntityRecognizer):
     """Custom recognizer for tartuNLP/EstBERT_NER model with ONNX optimization"""
@@ -386,6 +394,25 @@ def apply_allowlist(
     return filtered_results
 
 
+def apply_score_thresholds(
+    results: List[RecognizerResult], text: str
+) -> List[RecognizerResult]:
+    """Drop results below the threshold configured for their entity type."""
+    kept = []
+    for result in results:
+        threshold = entity_score_thresholds.get(
+            result.entity_type, default_score_threshold
+        )
+        if result.score >= threshold:
+            kept.append(result)
+        else:
+            logger.debug(
+                f"Dropped {result.entity_type} '{text[result.start : result.end]}' "
+                f"scoring {result.score:.2f} below {threshold}"
+            )
+    return kept
+
+
 def subtract_spans(
     result: RecognizerResult, blockers: List[RecognizerResult], text: str
 ) -> List[RecognizerResult]:
@@ -489,12 +516,27 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
         logger.error(f"✗ NLP engine creation failed: {e}")
         raise
 
+    # Score thresholds. The engine gets the lowest threshold any entity uses so
+    # it cannot pre-filter a result that an entity-specific threshold would still
+    # admit; apply_score_thresholds() then filters per entity.
+    global entity_score_thresholds, default_score_threshold
+    default_score_threshold = float(config.get("default_score_threshold", 0.8))
+    entity_score_thresholds = {
+        str(entity): float(score)
+        for entity, score in (config.get("entity_score_thresholds") or {}).items()
+    }
+    engine_threshold = min([default_score_threshold, *entity_score_thresholds.values()])
+    logger.info(
+        f"Score thresholds: default {default_score_threshold}, "
+        f"per-entity {entity_score_thresholds or 'none'}, engine {engine_threshold}"
+    )
+
     # Create analyzer
     logger.info("Creating AnalyzerEngine...")
     analyzer = AnalyzerEngine(
         nlp_engine=nlp_engine,
         supported_languages=supported_languages,
-        default_score_threshold=config.get("default_score_threshold", 0.8),
+        default_score_threshold=engine_threshold,
     )
     logger.info(" AnalyzerEngine created")
 
@@ -600,6 +642,7 @@ def analyze_with_lists(
             return_decision_process=return_decision_process,
             correlation_id=correlation_id,
         )
+        results = apply_score_thresholds(results, text)
         logger.info(f"  Found {len(results)} entities")
     except Exception as e:
         logger.error(f"  Analysis failed: {e}", exc_info=True)

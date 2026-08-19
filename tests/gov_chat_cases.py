@@ -282,6 +282,7 @@ DETECTION_CASES: list[dict] = [
             ("38001085718", {"EE_PERSONAL_CODE"}),
             ("49403136515", {"EE_PERSONAL_CODE"}),
             ("61203074321", {"EE_PERSONAL_CODE"}),
+            ("Rahvastikuregistris", ORG),
         ],
         "traps": [],
     },

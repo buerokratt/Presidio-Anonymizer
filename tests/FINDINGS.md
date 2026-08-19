@@ -26,7 +26,7 @@ verified against the rebuilt container before the next is started.
 | 4 | Denylist discarded on span overlap | Leak | ✅ fixed |
 | 5 | Case-form synthesis is a no-op | Leak | ✅ fixed |
 | 6 | All `PERSON` false positives come from spaCy | Precision | ✅ fixed |
-| 7 | Global 0.83 threshold cuts agency names | Recall | ⬜ not started |
+| 7 | Global 0.83 threshold cuts agency names | Recall | ✅ fixed |
 | 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
 | 9 | Car-plate regex matches money | Precision | ⏳ in progress |
 | 10 | `hash_type` accepted and ignored | Contract | ⬜ not started |
@@ -382,6 +382,33 @@ branch on entity type see a person where the record names an institution.
   masking it.
 
 ### 7. One global threshold of 0.83 cuts real agency names
+
+> **✅ FIXED** — the config gained an `entity_score_thresholds:` block, and
+> `apply_score_thresholds()` in `analyze_with_lists()` filters per entity type.
+> `AnalyzerEngine` only supports one threshold, so it is now built with the
+> *lowest* threshold in play and the real filtering happens afterwards.
+>
+> `ORGANIZATION: 0.45`; everything else keeps 0.83. The number came from
+> measuring, not guessing — under the new aggregation the missed agencies score
+> `Sotsiaalkindlustusamet` 0.77, `Riigikogu` 0.53, `Transpordiamet` 0.50, while
+> the *false* `ORGANIZATION` hits score `Riigilõiv` 0.98 and `RT I` 0.98. The two
+> populations do not overlap, so lowering the threshold buys recall without
+> admitting those errors.
+>
+> | | before | after |
+> |---|---|---|
+> | Strict P / R / F1 | 0.930 / 0.909 / 0.920 | **0.933 / 0.944 / 0.939** |
+> | `ORGANIZATION` exact | 20 | **26** |
+> | `ORGANIZATION` P / R / F1 | 0.769 / 0.800 / 0.784 | **0.867 / 0.929 / 0.897** |
+> | Missed spans | 8 | **5** |
+>
+> `Päästeamet` is still missed in both cases that use it, at any threshold: the
+> model does not predict it as an entity at all, so no amount of tuning recovers
+> it. That is a model limitation, not a configuration one — worth reporting
+> upstream or adding as a pattern recognizer if these names matter operationally.
+>
+> Also corrected here: `Rahvastikuregistris` was being counted as a false
+> positive when it is a correct detection the gold set had omitted.
 
 The model finds them; they score under the cut, which makes behaviour look
 erratic when it is a threshold sitting inside the score distribution.

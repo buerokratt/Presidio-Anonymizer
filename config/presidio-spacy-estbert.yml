@@ -6,6 +6,15 @@ supported_languages:
 
 default_score_threshold: 0.83
 
+# Per-entity overrides of default_score_threshold. One global cut does not fit
+# every entity: the NER model scores Estonian agency names anywhere from 0.50
+# (Transpordiamet) to 1.00 (Maksu- ja Tolliamet), so a threshold strict enough
+# for identifiers silently dropped real institutions. Missing an organisation
+# is the more expensive error here, and the false ORGANIZATION hits that remain
+# score ~0.98, so they are not what this threshold controls.
+entity_score_thresholds:
+  ORGANIZATION: 0.45
+
 # Spacy NLP Engine Configuration
 nlp_configuration:
   nlp_engine_name: spacy
