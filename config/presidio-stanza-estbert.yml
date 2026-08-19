@@ -19,7 +19,7 @@ nlp_configuration:
 
 # EstBERT NER Model Configuration
 estbert_configuration:
-  model_name: "tartuNLP/EstBERT_NER_v2"
+  model_name: "buerokrattRIA/xlm-roberta-NER-syntheticGov"
   supported_language: et
   entity_mapping:
     # Map EstBERT Estonian labels to Presidio entities
