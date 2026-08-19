@@ -22,9 +22,9 @@ verified against the rebuilt container before the next is started.
 |---|---|---|---|
 | 1 | Long input loses all transformer detections | Leak | ✅ fixed |
 | 2 | Names split at subword boundaries | Leak | ✅ fixed |
-| 3 | `IP_ADDRESS` never anonymised | Leak | ⬜ not started |
+| 3 | `IP_ADDRESS` never anonymised | Leak | ⏳ in progress |
 | 4 | Denylist discarded on span overlap | Leak | ⬜ not started |
-| 5 | Case-form synthesis is a no-op | Leak | ⏳ in progress |
+| 5 | Case-form synthesis is a no-op | Leak | ✅ fixed |
 | 6 | All `PERSON` false positives come from spaCy | Precision | ⬜ not started |
 | 7 | Global 0.83 threshold cuts agency names | Recall | ⬜ not started |
 | 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
@@ -211,6 +211,43 @@ out    Meie plaan  on salajane.                                <- redacted corre
 - **Cases**: `H02`, `E04`, `E07`
 
 ### 5. Case-form synthesis produces nothing for the words it exists to expand — LEAK
+
+> **✅ FIXED** — `utils.py` and `presidio_flask_estbert.py`, in three parts.
+>
+> **POS tag.** `synthesize_word()` now tries `"H"` (pärisnimi) first for a
+> capitalised word and `"S"` first otherwise, falling back to the other tag when
+> the first yields nothing. Matching downstream is case-insensitive, so a
+> lowercase fallback form is still useful.
+>
+> **Multi-word entries.** Estonian inflects the head of the phrase, which is the
+> last word, so `synthesize_phrase()` inflects only that and keeps the prefix
+> fixed. `synthesize_all()` calls it instead of `synthesize_word()`.
+>
+> ```
+> 'Tallinn'                 ->  1 form   ->  14 forms
+> 'Phoenix'                 ->  1 form   ->  14 forms
+> 'Maksu- ja Tolliamet'     ->  1 form   ->  37 forms
+> 'Riigi Infosüsteemi Amet' ->  1 form   ->  37 forms
+> ```
+>
+> **Span containment.** Fixing the above surfaced a second defect in the same
+> feature: `apply_allowlist()` compared the *whole* detected span against the
+> allowlist, so an allowlisted word inside a wider model span was never spared.
+> With `allowlist: ["Tallinn"]`, the span `Phoenix Tallinnas` matched nothing and
+> both words were anonymised. It now trims allowlisted terms off either edge of a
+> span and drops the span only when nothing is left:
+>
+> ```
+> before  [ISIK] Maksu- ja Tolliametist juhib projekti [PII].
+> after   [ISIK] Maksu- ja Tolliametist juhib projekti [PII] Tallinnas.
+> ```
+>
+> Verified: cases `E01`, `E02`, `E05`, `E06` pass. Behaviour cases 16/24 → **19/24**.
+> Detection metrics unchanged, as expected — allow/denylists are per-request and
+> the detection cases send none.
+>
+> Known limit: an allowlisted term in the *middle* of a span is not split out,
+> only edges are trimmed. No case in the suite hits it.
 
 `synthesize_all()` calls Vabamorf with POS `"S"` (common noun). Capitalised
 proper nouns — exactly what allowlists and denylists contain — are not in that

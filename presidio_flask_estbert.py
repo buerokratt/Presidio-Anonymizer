@@ -318,7 +318,14 @@ class DenylistRecognizer(EntityRecognizer):
 def apply_allowlist(
     results: List[RecognizerResult], text: str, allowlist: List[str]
 ) -> List[RecognizerResult]:
-    """Filter out results that match words in the allowlist"""
+    """Filter out results that match words in the allowlist
+
+    A detected span is dropped when it is entirely allowlisted. When an
+    allowlisted term only sits at one edge of a wider span, the span is trimmed
+    back instead of being kept whole - otherwise a model span such as
+    "Phoenix Tallinnas" would anonymise an allowlisted "Tallinn" along with the
+    codename next to it.
+    """
     if not allowlist:
         return results
 
@@ -326,11 +333,55 @@ def apply_allowlist(
     filtered_results = []
 
     for result in results:
-        detected_text = text[result.start : result.end].lower()
-        if detected_text not in allowlist_lower:
-            filtered_results.append(result)
-        else:
-            logger.debug(f"Filtered out '{detected_text}' due to allowlist")
+        start, end = result.start, result.end
+
+        trimmed = True
+        while trimmed and start < end:
+            trimmed = False
+            span_lower = text[start:end].lower()
+            for term in allowlist_lower:
+                if not term or len(term) > len(span_lower):
+                    continue
+                if span_lower == term:
+                    start = end
+                    trimmed = True
+                    break
+                if (
+                    span_lower.endswith(term)
+                    and not span_lower[-len(term) - 1].isalnum()
+                ):
+                    end -= len(term)
+                    trimmed = True
+                    break
+                if span_lower.startswith(term) and not span_lower[len(term)].isalnum():
+                    start += len(term)
+                    trimmed = True
+                    break
+            # Whitespace and punctuation exposed by a trim are not PII either.
+            while start < end and not text[start].isalnum():
+                start += 1
+            while end > start and not text[end - 1].isalnum():
+                end -= 1
+
+        if start >= end:
+            logger.debug(
+                f"Filtered out '{text[result.start : result.end]}' due to allowlist"
+            )
+            continue
+
+        if (start, end) != (result.start, result.end):
+            logger.debug(
+                f"Trimmed '{text[result.start : result.end]}' to "
+                f"'{text[start:end]}' due to allowlist"
+            )
+            result = RecognizerResult(
+                entity_type=result.entity_type,
+                start=start,
+                end=end,
+                score=result.score,
+            )
+
+        filtered_results.append(result)
 
     return filtered_results
 
