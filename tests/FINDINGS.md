@@ -30,7 +30,7 @@ verified against the rebuilt container before the next was started.
 | 8 | Case endings survive outside the placeholder | Output | ✅ fixed via 2 | `089b843` |
 | 9 | Car-plate regex matches money | Precision | ✅ fixed | `bdf8125` |
 | 10 | `hash_type` accepted and ignored | Contract | ✅ fixed | `c8df0a2` |
-| 11 | In-handler validation returns 500 | Contract | ✅ fixed | `e234d1a` |
+| 11 | In-handler validation returns 500 | Contract | ✅ fixed | `82d295b` |
 
 ## Headline
 
