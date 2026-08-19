@@ -29,8 +29,8 @@ verified against the rebuilt container before the next is started.
 | 7 | Global 0.83 threshold cuts agency names | Recall | ✅ fixed |
 | 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
 | 9 | Car-plate regex matches money | Precision | ✅ fixed |
-| 10 | `hash_type` accepted and ignored | Contract | ⏳ in progress |
-| 11 | In-handler validation returns 500 | Contract | ⬜ not started |
+| 10 | `hash_type` accepted and ignored | Contract | ✅ fixed |
+| 11 | In-handler validation returns 500 | Contract | ⏳ in progress |
 
 ## Headline
 
@@ -510,6 +510,24 @@ same over-broad-regex family.
 - **Cases**: `C04`, `A05`, `C01`
 
 ### 10. `hash_type` is accepted and ignored
+
+> **✅ FIXED** — `app.py` gained the missing `hash` branch, which forwards
+> `hash_type` (defaulting to sha256) and rejects anything outside
+> sha256/sha512/md5 with a 400. `keep` was folded in alongside `redact` as a
+> no-parameter operator, and an unknown operator type now returns 400 instead of
+> falling through to `OperatorConfig` with no params, where Presidio quietly
+> treated it as `replace`.
+>
+> Verified against digests computed independently:
+>
+> ```
+> md5     -> 32 hex chars   c1aa0f35ce4014dfeaca8d82...   matches hashlib
+> sha256  -> 64 hex chars   c6a32cd2f902affa46a9468d...   matches hashlib
+> sha512  -> 128 hex chars  3747cb901db103e82ab6f273...   matches hashlib
+> ```
+>
+> Case `F04` passes and reports "declared hash_type=md5 was honoured".
+> Behaviour cases 22/24 → **23/24**.
 
 The operator parser forwards params for `replace`, `mask`, `redact`, `encrypt`.
 `hash` has no branch, so `hash_type` never reaches `OperatorConfig`. A caller

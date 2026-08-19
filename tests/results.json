@@ -31,7 +31,7 @@
       "group": "A. Agency conversations",
       "desc": "Tax board: name + personal code + agency",
       "text": "Tere! Minu nimi on Jaan Tamm, isikukood 38001085718. Soovin teada, kas mul on Maksu- ja Tolliametile maksuvõlga.",
-      "elapsed": 0.12459631101228297,
+      "elapsed": 0.20678847099770792,
       "text_unchanged": true,
       "detected": [
         {
@@ -102,7 +102,7 @@
       "group": "A. Agency conversations",
       "desc": "Unemployment fund: name, phone, email",
       "text": "Klient: Mari Mets soovib end Töötukassas töötuna arvele võtta. Telefon +372 5555 5555, e-post mari.mets@gmail.com.",
-      "elapsed": 0.28720561499358155,
+      "elapsed": 0.4023587529954966,
       "text_unchanged": true,
       "detected": [
         {
@@ -192,7 +192,7 @@
       "group": "A. Agency conversations",
       "desc": "Social insurance board: pension payment to IBAN",
       "text": "Sotsiaalkindlustusamet kannab Kalle Kase pensioni kontole EE382200221020145685 alates 01.09.2026.",
-      "elapsed": 0.1790235069929622,
+      "elapsed": 0.28464352898299694,
       "text_unchanged": true,
       "detected": [
         {
@@ -282,7 +282,7 @@
       "group": "A. Agency conversations",
       "desc": "Police and border guard: ID document number",
       "text": "Politsei- ja Piirivalveamet väljastas Peeter Kuusele isikutunnistuse AA1234567, mis kehtib kuni 12.03.2031.",
-      "elapsed": 0.134888567001326,
+      "elapsed": 0.3786029939947184,
       "text_unchanged": true,
       "detected": [
         {
@@ -372,7 +372,7 @@
       "group": "A. Agency conversations",
       "desc": "Transport administration: car registration number",
       "text": "Transpordiamet kinnitas, et sõiduk registreerimismärgiga 123 ABC kuulub Tiit Saarele.",
-      "elapsed": 0.10649361400282942,
+      "elapsed": 0.23974687300506048,
       "text_unchanged": true,
       "detected": [
         {
@@ -443,7 +443,7 @@
       "group": "A. Agency conversations",
       "desc": "Health insurance fund: patient with personal code",
       "text": "Tervisekassa andmetel on Liis Oja (isikukood 49403136515) ravikindlustus kehtiv.",
-      "elapsed": 0.14847519199247472,
+      "elapsed": 0.16728460500598885,
       "text_unchanged": true,
       "detected": [
         {
@@ -514,7 +514,7 @@
       "group": "A. Agency conversations",
       "desc": "City government: street address change",
       "text": "Palun teatage Tallinna Linnavalitsusele, et Anne Lepik kolis aadressilt Liivalaia 2 aadressile Narva maantee 15, Tallinn.",
-      "elapsed": 0.14891525500570424,
+      "elapsed": 0.312957825983176,
       "text_unchanged": true,
       "detected": [
         {
@@ -626,7 +626,7 @@
       "group": "A. Agency conversations",
       "desc": "State information system authority: email, URL, IP",
       "text": "Riigi Infosüsteemi Amet teatas, et kasutaja toomas.raud@ria.ee logis sisse aadressilt 192.168.10.24 portaalis www.eesti.ee.",
-      "elapsed": 0.17357351200189441,
+      "elapsed": 0.3982770839938894,
       "text_unchanged": true,
       "detected": [
         {
@@ -716,7 +716,7 @@
       "group": "A. Agency conversations",
       "desc": "Rescue board: caller, phone, address, clock time",
       "text": "Päästeamet sai kell 14:30 teate Katrin Ilvese telefonilt 5551234, et Pärnu mnt 42 korteris on suitsulõhn.",
-      "elapsed": 0.21786979099852033,
+      "elapsed": 0.23285732700605877,
       "text_unchanged": true,
       "detected": [
         {
@@ -818,7 +818,7 @@
       "group": "A. Agency conversations",
       "desc": "Parliament: petition signed on a spelled-out date",
       "text": "Riigikogu menetles kollektiivset pöördumist, mille esitas Urmas Vaher 15 märts 2026 e-posti aadressilt urmas@petitsioon.ee.",
-      "elapsed": 0.2666051910200622,
+      "elapsed": 0.20414356698165648,
       "text_unchanged": true,
       "detected": [
         {
@@ -908,7 +908,7 @@
       "group": "B. Morphology",
       "desc": "Person name inflected (allative, genitive) across a dialogue",
       "text": "Nõustaja: Kas te rääkisite Jaan Tammele? Klient: Jah, Jaan Tamme avaldus on juba esitatud.",
-      "elapsed": 0.10855240398086607,
+      "elapsed": 0.19037340697832406,
       "text_unchanged": true,
       "detected": [
         {
@@ -960,7 +960,7 @@
       "group": "B. Morphology",
       "desc": "Agency names in illative and ablative case",
       "text": "Avaldus tuleb esitada Maksu- ja Tolliametisse ning koopia saata Töötukassalt saadud kirjaga Sotsiaalkindlustusametile.",
-      "elapsed": 0.180304007983068,
+      "elapsed": 0.115079685987439,
       "text_unchanged": true,
       "detected": [
         {
@@ -1031,7 +1031,7 @@
       "group": "B. Morphology",
       "desc": "City names in inessive/elative case",
       "text": "Kadri Sepp elab Tallinnas, kolis sinna Tartust ja töötas varem Narvas Politsei- ja Piirivalveametis.",
-      "elapsed": 0.14229679299751297,
+      "elapsed": 0.25354797500767745,
       "text_unchanged": true,
       "detected": [
         {
@@ -1143,7 +1143,7 @@
       "group": "B. Morphology",
       "desc": "Names with Estonian diacritics and foreign letters",
       "text": "Kärt Õunapuu ja Jüri Müür esitasid Keskkonnaametile kaebuse, millele vastas Žanna Šišova.",
-      "elapsed": 0.17129775500507094,
+      "elapsed": 0.14526079600909725,
       "text_unchanged": true,
       "detected": [
         {
@@ -1233,7 +1233,7 @@
       "group": "B. Morphology",
       "desc": "Hyphenated given name and double surname",
       "text": "Mari-Liis Kask-Tamm pöördus Justiitsministeeriumi poole isikukoodiga 47001010001.",
-      "elapsed": 0.12836764298845083,
+      "elapsed": 0.1871369350119494,
       "text_unchanged": true,
       "detected": [
         {
@@ -1304,7 +1304,7 @@
       "group": "C. Pattern recognizers",
       "desc": "Several valid personal codes in one message",
       "text": "Perekonna isikukoodid: 38001085718, 49403136515 ja 61203074321 on Rahvastikuregistris kontrollitud.",
-      "elapsed": 0.15867177900508977,
+      "elapsed": 0.18536393999238499,
       "text_unchanged": true,
       "detected": [
         {
@@ -1394,7 +1394,7 @@
       "group": "C. Pattern recognizers",
       "desc": "Four phone number formats",
       "text": "Helistage Maksu- ja Tolliameti infotelefonile 8800811 või +372 5555 5555, vajadusel 372 5551234 ja (+372) 55512345.",
-      "elapsed": 0.20879370599868707,
+      "elapsed": 0.20938408598885871,
       "text_unchanged": true,
       "detected": [
         {
@@ -1503,7 +1503,7 @@
       "group": "C. Pattern recognizers",
       "desc": "Estonian and foreign IBAN",
       "text": "Riigilõiv kanti kontole EE382200221020145685, tagasimakse kontole LT121000011101001000.",
-      "elapsed": 0.2398478490067646,
+      "elapsed": 0.26369471999350935,
       "text_unchanged": true,
       "detected": [
         {
@@ -1568,7 +1568,7 @@
       "group": "C. Pattern recognizers",
       "desc": "Car number vs. a money amount with the same shape",
       "text": "Transpordiamet: sõiduk 123 ABC sai trahvi summas 500 EUR, teine sõiduk 45 XYZ jäi hoiatusega.",
-      "elapsed": 0.202802197978599,
+      "elapsed": 0.2178803400020115,
       "text_unchanged": true,
       "detected": [
         {
@@ -1620,7 +1620,7 @@
       "group": "C. Pattern recognizers",
       "desc": "Estonian document number prefixes",
       "text": "Politsei- ja Piirivalveamet: pass AA1234567 ja elamisluba PB7654321 on kehtetud.",
-      "elapsed": 0.15049636000185274,
+      "elapsed": 0.1794771479908377,
       "text_unchanged": true,
       "detected": [
         {
@@ -1691,7 +1691,7 @@
       "group": "C. Pattern recognizers",
       "desc": "Numeric, spelled-out and inflected dates plus a time",
       "text": "Otsus tehti 12.03.2026, teade saadeti 15 märts 2026, istung toimub 20 aprillil 2026 kell 09:15.",
-      "elapsed": 0.12023739799042232,
+      "elapsed": 0.2056989159900695,
       "text_unchanged": true,
       "detected": [
         {
@@ -1781,7 +1781,7 @@
       "group": "C. Pattern recognizers",
       "desc": "Credit card and crypto address",
       "text": "Riigilõivu tasumine kaardiga 4111 1111 1111 1111 ebaõnnestus, krüptomakse aadressile 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2 samuti.",
-      "elapsed": 0.19618796202121302,
+      "elapsed": 0.19389549200423062,
       "text_unchanged": true,
       "detected": [
         {
@@ -1833,7 +1833,7 @@
       "group": "D. Precision traps",
       "desc": "Purely institutional text, no personal data at all",
       "text": "Maksu- ja Tolliamet avaldas teate, et e-maksuamet on hoolduse tõttu suletud. Küsimustega pöörduge klienditoe poole.",
-      "elapsed": 0.20880259000114165,
+      "elapsed": 0.1472720910096541,
       "text_unchanged": true,
       "detected": [
         {
@@ -1866,7 +1866,7 @@
       "group": "D. Precision traps",
       "desc": "Money sums and a payment reference number",
       "text": "Maksuteade: summa 1250,50 eurot, viitenumber 2900123456, tähtaeg möödas. Intress 0,06% päevas.",
-      "elapsed": 0.28323953502695076,
+      "elapsed": 0.20188533497275785,
       "text_unchanged": true,
       "detected": [],
       "gold": [],
@@ -1878,7 +1878,7 @@
       "group": "D. Precision traps",
       "desc": "Statute and gazette references",
       "text": "Vastavalt maksukorralduse seaduse § 32 lõikele 2 (RT I 2002, 26, 150) on Maksu- ja Tolliametil õigus nõuda andmeid.",
-      "elapsed": 0.33551430399529636,
+      "elapsed": 0.16860467998776585,
       "text_unchanged": true,
       "detected": [
         {
@@ -1924,7 +1924,7 @@
       "group": "D. Precision traps",
       "desc": "Institution names that are not people",
       "text": "Vabariigi Valitsus ja Riigikogu kinnitasid, et Statistikaamet avaldab andmed järgmisel nädalal.",
-      "elapsed": 0.10361219698097557,
+      "elapsed": 0.18432846802170388,
       "text_unchanged": true,
       "detected": [
         {
@@ -1995,7 +1995,7 @@
       "group": "D. Precision traps",
       "desc": "Court case number and room number",
       "text": "Haldusasi 3-21-1234 arutatakse ruumis 305. Kohtunik teatas otsuse edastamisest Justiitsministeeriumile.",
-      "elapsed": 0.14137398501043208,
+      "elapsed": 0.13136681698961183,
       "text_unchanged": true,
       "detected": [
         {
@@ -2028,7 +2028,7 @@
       "group": "D. Precision traps",
       "desc": "Agency name as the first word of a short sentence",
       "text": "Päästeamet sai teate. Transpordiamet kinnitas otsuse.",
-      "elapsed": 0.067358845990384,
+      "elapsed": 0.09377918799873441,
       "text_unchanged": true,
       "detected": [
         {
@@ -2072,7 +2072,7 @@
       "group": "D. Precision traps",
       "desc": "IPv4 with an explicit context word (threshold reachability)",
       "text": "Riigi Infosüsteemi Amet: serveri IP on 192.168.10.24 ja IPv6 2001:db8::1.",
-      "elapsed": 0.2383713369781617,
+      "elapsed": 0.11406858600093983,
       "text_unchanged": true,
       "detected": [
         {
@@ -2145,7 +2145,7 @@
       "group": "E. Allow/denylist",
       "desc": "Allowlisted agency name survives anonymisation",
       "status": 200,
-      "elapsed": 0.12815205598599277,
+      "elapsed": 0.17437553199124523,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2156,7 +2156,7 @@
       "group": "E. Allow/denylist",
       "desc": "Allowlist base form must cover an inflected mention (Vabamorf synthesis)",
       "status": 200,
-      "elapsed": 0.09532576400670223,
+      "elapsed": 0.09609151599579491,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2167,7 +2167,7 @@
       "group": "E. Allow/denylist",
       "desc": "Denylisted codename in base form is forced to PII",
       "status": 200,
-      "elapsed": 0.09840015499503352,
+      "elapsed": 0.11031293901032768,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2178,7 +2178,7 @@
       "group": "E. Allow/denylist",
       "desc": "Denylist base form must cover an inflected mention",
       "status": 200,
-      "elapsed": 0.12867704400559887,
+      "elapsed": 0.12318189701181836,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2189,7 +2189,7 @@
       "group": "E. Allow/denylist",
       "desc": "Allowlist and denylist together in one request",
       "status": 200,
-      "elapsed": 0.15244233797420748,
+      "elapsed": 0.17834757000673562,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2200,7 +2200,7 @@
       "group": "E. Allow/denylist",
       "desc": "Allowlist entry matching the surface form exactly (mechanism check)",
       "status": 200,
-      "elapsed": 0.10456877999240533,
+      "elapsed": 0.09808775200508535,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2211,7 +2211,7 @@
       "group": "E. Allow/denylist",
       "desc": "Denylist entry matching the surface form exactly (mechanism check)",
       "status": 200,
-      "elapsed": 0.09980895699118264,
+      "elapsed": 0.09292895998805761,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2222,7 +2222,7 @@
       "group": "F. Operators",
       "desc": "DEFAULT replace applies to every entity type",
       "status": 200,
-      "elapsed": 0.10091455199290067,
+      "elapsed": 0.19452680298127234,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2233,7 +2233,7 @@
       "group": "F. Operators",
       "desc": "mask operator with masking_char and chars_to_mask",
       "status": 200,
-      "elapsed": 0.09727344199200161,
+      "elapsed": 0.13349066901719198,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2244,7 +2244,7 @@
       "group": "F. Operators",
       "desc": "redact removes the span entirely",
       "status": 200,
-      "elapsed": 0.1294790600077249,
+      "elapsed": 0.10245983698405325,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2255,33 +2255,31 @@
       "group": "F. Operators",
       "desc": "hash with explicit hash_type (md5) - is the parameter forwarded?",
       "status": 200,
-      "elapsed": 0.1616862119990401,
-      "passed": false,
-      "failures": [
-        "hash_type=md5 silently dropped (output is sha256)"
-      ],
+      "elapsed": 0.10216360300546512,
+      "passed": true,
+      "failures": [],
       "notes": [
-        "declared hash_type=md5 IGNORED, output used sha256"
+        "declared hash_type=md5 was honoured"
       ],
-      "output": "Isikukood c6a32cd2f902affa46a9468d8ed1d4a2f4bce44d8b49be3c1608e325437ae867 on registreeritud."
+      "output": "Isikukood c1aa0f35ce4014dfeaca8d82b254724a on registreeritud."
     },
     {
       "id": "F05",
       "group": "F. Operators",
       "desc": "encrypt on one entity, keep on another",
       "status": 200,
-      "elapsed": 0.10741010299534537,
+      "elapsed": 0.09473566900123842,
       "passed": true,
       "failures": [],
       "notes": [],
-      "output": "Du9+1n9RZvP9Kk+EX7OISCbyQnZ/rHxrvRQ8A2ackjs= elab Tallinnas."
+      "output": "Uhj60jh7Q14a2vN4KN8OTsS0el456809Rs4KuLpZpaA= elab Tallinnas."
     },
     {
       "id": "F06",
       "group": "F. Operators",
       "desc": "No anonymizers - YAML default_operators supply Estonian placeholders",
       "status": 200,
-      "elapsed": 0.12550541598466225,
+      "elapsed": 0.10719628501101397,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2292,7 +2290,7 @@
       "group": "F. Operators",
       "desc": "entities filter restricts detection to PERSON only",
       "status": 200,
-      "elapsed": 0.18070050398819149,
+      "elapsed": 0.10442547799902968,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2303,7 +2301,7 @@
       "group": "H. Robustness",
       "desc": "Transcript longer than the model's 514-position window keeps finding names",
       "status": 200,
-      "elapsed": 4.087592341995332,
+      "elapsed": 3.862063628999749,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2314,7 +2312,7 @@
       "group": "H. Robustness",
       "desc": "Denylist match overlapped by an NER span still gets its own operator",
       "status": 200,
-      "elapsed": 0.13127759599592537,
+      "elapsed": 0.10144598400802352,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2325,7 +2323,7 @@
       "group": "H. Robustness",
       "desc": "Names must not be split at subword boundaries (aggregation_strategy)",
       "status": 200,
-      "elapsed": 0.17184366899891756,
+      "elapsed": 0.19243156901211478,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2336,7 +2334,7 @@
       "group": "H. Robustness",
       "desc": "Text of ~2700 chars is windowed, not dropped",
       "status": 200,
-      "elapsed": 3.001102895999793,
+      "elapsed": 2.7863119959947653,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2347,7 +2345,7 @@
       "group": "G. API contract",
       "desc": "Missing 'texts' field is rejected",
       "status": 400,
-      "elapsed": 0.003070792998187244,
+      "elapsed": 0.004972241003997624,
       "passed": true,
       "failures": [],
       "notes": [
@@ -2360,7 +2358,7 @@
       "group": "G. API contract",
       "desc": "'texts' as a string instead of an array is rejected",
       "status": 400,
-      "elapsed": 0.001968966971617192,
+      "elapsed": 0.003828796005109325,
       "passed": true,
       "failures": [],
       "notes": [
@@ -2373,7 +2371,7 @@
       "group": "G. API contract",
       "desc": "Empty 'texts' array is rejected",
       "status": 500,
-      "elapsed": 0.0076138610020279884,
+      "elapsed": 0.0106705280195456,
       "passed": false,
       "failures": [
         "expected HTTP 400, got 500: {'message': 'Anonymization failed: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand.'}"
@@ -2386,7 +2384,7 @@
       "group": "G. API contract",
       "desc": "Language not registered in the loaded config",
       "status": 500,
-      "elapsed": 0.003376295993803069,
+      "elapsed": 0.0034386100014671683,
       "passed": true,
       "failures": [],
       "notes": [
@@ -2399,7 +2397,7 @@
       "group": "G. API contract",
       "desc": "Batch of three texts (incl. empty string) keeps order and arity",
       "status": 200,
-      "elapsed": 0.18986638999194838,
+      "elapsed": 0.1820565839880146,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2410,7 +2408,7 @@
       "group": "G. API contract",
       "desc": "Long multi-turn chat transcript stays consistent",
       "status": 200,
-      "elapsed": 0.7252389269997366,
+      "elapsed": 0.30692163002095185,
       "passed": true,
       "failures": [],
       "notes": [],
@@ -2566,29 +2564,29 @@
   },
   "latency": {
     "plain": {
-      "min": 0.225995741027873,
-      "median": 0.2474109980103094,
-      "max": 0.2916793790063821
+      "min": 0.12554187499335967,
+      "median": 0.1826484490011353,
+      "max": 0.18758458801312372
     },
     "allowlist_3": {
-      "min": 0.11692069101263769,
-      "median": 0.1288323040062096,
-      "max": 0.16383398699690588
+      "min": 0.1403901070007123,
+      "median": 0.17468476298381574,
+      "max": 0.19387587101664394
     },
     "denylist_3": {
-      "min": 0.20034801599103957,
-      "median": 0.21336293799686246,
-      "max": 0.2753057790105231
+      "min": 0.12661295998259448,
+      "median": 0.21918215398909524,
+      "max": 0.28703857099753805
     },
     "both_10": {
-      "min": 0.24956615100381896,
-      "median": 0.322377922013402,
-      "max": 0.36129978401004337
+      "min": 0.17263506399467587,
+      "median": 0.1801899549900554,
+      "max": 0.2160277540097013
     },
     "batch_10": {
-      "min": 1.471178478008369,
-      "median": 2.428428704995895,
-      "max": 5.120402111992007
+      "min": 1.420856979006203,
+      "median": 1.4940806779777631,
+      "max": 1.50679684599163
     }
   }
 }
