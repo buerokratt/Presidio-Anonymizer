@@ -386,6 +386,46 @@ def apply_allowlist(
     return filtered_results
 
 
+def subtract_spans(
+    result: RecognizerResult, blockers: List[RecognizerResult], text: str
+) -> List[RecognizerResult]:
+    """Cut the blocker spans out of `result` and return whatever is left of it.
+
+    Used to carve a denylist match out of an overlapping detection without
+    losing the rest of that detection, which may be real PII in its own right.
+    """
+    pieces = [(result.start, result.end)]
+
+    for blocker in blockers:
+        remaining = []
+        for start, end in pieces:
+            if blocker.end <= start or blocker.start >= end:
+                remaining.append((start, end))
+                continue
+            if start < blocker.start:
+                remaining.append((start, blocker.start))
+            if blocker.end < end:
+                remaining.append((blocker.end, end))
+        pieces = remaining
+
+    trimmed = []
+    for start, end in pieces:
+        while start < end and not text[start].isalnum():
+            start += 1
+        while end > start and not text[end - 1].isalnum():
+            end -= 1
+        if end > start:
+            trimmed.append(
+                RecognizerResult(
+                    entity_type=result.entity_type,
+                    start=start,
+                    end=end,
+                    score=result.score,
+                )
+            )
+    return trimmed
+
+
 def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecognizer]:
     """Create pattern-based recognizers from configuration"""
     recognizers = []
@@ -567,6 +607,31 @@ def analyze_with_lists(
             denylist=denylist, entity_type="DENYLIST_MATCH", supported_language=language
         )
         denylist_results = denylist_recognizer.analyze(text, ["DENYLIST_MATCH"])
+
+        # A denylist entry is a promise that the word is treated as PII, so it
+        # has to win any overlap. Left to compete, the anonymizer's conflict
+        # resolution preferred a longer overlapping NER span and dropped the
+        # DENYLIST_MATCH result, which silently discarded the operator chosen
+        # for it - with DEFAULT=keep and DENYLIST_MATCH=redact the denylisted
+        # word was published verbatim.
+        #
+        # The overlapping result is cut back rather than discarded: a merged
+        # span like "Kalle Kask Phoenixis" must keep protecting the name once
+        # the denylisted word is carved out of it.
+        if denylist_results:
+            kept = []
+            for result in results:
+                clashes = [
+                    d
+                    for d in denylist_results
+                    if result.start < d.end and d.start < result.end
+                ]
+                if clashes:
+                    kept.extend(subtract_spans(result, clashes, text))
+                else:
+                    kept.append(result)
+            results = kept
+
         results.extend(denylist_results)
 
     results.sort(key=lambda x: x.start)

@@ -23,9 +23,9 @@ verified against the rebuilt container before the next is started.
 | 1 | Long input loses all transformer detections | Leak | ✅ fixed |
 | 2 | Names split at subword boundaries | Leak | ✅ fixed |
 | 3 | `IP_ADDRESS` never anonymised | Leak | ✅ fixed |
-| 4 | Denylist discarded on span overlap | Leak | ⏳ in progress |
+| 4 | Denylist discarded on span overlap | Leak | ✅ fixed |
 | 5 | Case-form synthesis is a no-op | Leak | ✅ fixed |
-| 6 | All `PERSON` false positives come from spaCy | Precision | ⬜ not started |
+| 6 | All `PERSON` false positives come from spaCy | Precision | ⏳ in progress |
 | 7 | Global 0.83 threshold cuts agency names | Recall | ⬜ not started |
 | 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
 | 9 | Car-plate regex matches money | Precision | ⬜ not started |
@@ -220,6 +220,31 @@ directly after the literal word "IP".
 - **Cases**: `A08`, `D07`
 
 ### 4. Denylist matches are discarded when another entity overlaps — LEAK
+
+> **✅ FIXED** — `analyze_with_lists()` now resolves denylist spans last and lets
+> them win, instead of handing them to the anonymizer to compete on score and
+> length.
+>
+> The obvious implementation — drop any detection that overlaps a denylist span —
+> would have introduced a *new* leak: a merged span like `Kalle Kask Phoenixis`
+> also protects a real name, and discarding it wholesale would publish that name.
+> So `subtract_spans()` cuts the denylist span out and keeps the remainder,
+> re-trimming the pieces to alphanumeric edges and dropping only what is left
+> empty.
+>
+> ```
+> DEFAULT keep, DENYLIST_MATCH redact, denylist ["Phoenixis"]
+> before  Projektis Phoenixis osales ka Sotsiaalkindlustusamet.   <- leaked
+> after   Projektis  osales ka Sotsiaalkindlustusamet.
+>
+> DEFAULT replace, DENYLIST_MATCH [SALASTATUD], denylist ["Phoenix"]
+> in      Kalle Kask Phoenixis kirjutas aruande.
+> after   [PII] [SALASTATUD] kirjutas aruande.    <- name still protected
+> ```
+>
+> Verified: cases `E03`, `E04`, `E05`, `E07`, `H02` all pass. Behaviour cases
+> 19/24 → **22/24**; the only remaining failures are findings 10 and 11.
+> Detection metrics unchanged.
 
 `DENYLIST_MATCH` is dropped during Presidio's overlap resolution if any NER span
 touches it, despite carrying score 1.0, so the caller's chosen operator for it
