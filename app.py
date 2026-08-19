@@ -691,6 +691,13 @@ Endpoint tagastab `results` massiivi, kus iga element vastab ühele sisendteksti
 
                     return {"results": results_array}, 200
 
+                except HTTPException:
+                    # api.abort() raises an HTTPException, so a 400 raised by the
+                    # validation above used to be caught below and re-wrapped as a
+                    # 500 that still quoted the original 400. Let the intended
+                    # status through instead - a client has to be able to tell a
+                    # bad request from a server fault.
+                    raise
                 except Exception as e:
                     error_msg = f"Anonymization failed: {str(e)}"
                     logger.error(error_msg)

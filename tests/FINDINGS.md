@@ -15,37 +15,62 @@ uv run python tests/test_gov_chats.py --json tests/results.json
 
 ## Fix status
 
-Fixes are being applied on branch `audit-fixes`, one finding at a time, each
-verified against the rebuilt container before the next is started.
+All 11 findings are fixed on branch `audit-fixes`, one commit each, every one
+verified against the rebuilt container before the next was started.
 
-| # | Finding | Severity | Status |
-|---|---|---|---|
-| 1 | Long input loses all transformer detections | Leak | ✅ fixed |
-| 2 | Names split at subword boundaries | Leak | ✅ fixed |
-| 3 | `IP_ADDRESS` never anonymised | Leak | ✅ fixed |
-| 4 | Denylist discarded on span overlap | Leak | ✅ fixed |
-| 5 | Case-form synthesis is a no-op | Leak | ✅ fixed |
-| 6 | All `PERSON` false positives come from spaCy | Precision | ✅ fixed |
-| 7 | Global 0.83 threshold cuts agency names | Recall | ✅ fixed |
-| 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
-| 9 | Car-plate regex matches money | Precision | ✅ fixed |
-| 10 | `hash_type` accepted and ignored | Contract | ✅ fixed |
-| 11 | In-handler validation returns 500 | Contract | ⏳ in progress |
+| # | Finding | Severity | Status | Commit |
+|---|---|---|---|---|
+| 1 | Long input loses all transformer detections | Leak | ✅ fixed | `c34e091` |
+| 2 | Names split at subword boundaries | Leak | ✅ fixed | `089b843` |
+| 3 | `IP_ADDRESS` never anonymised | Leak | ✅ fixed | `aa01471` |
+| 4 | Denylist discarded on span overlap | Leak | ✅ fixed | `b78e6a5` |
+| 5 | Case-form synthesis is a no-op | Leak | ✅ fixed | `6920bad` |
+| 6 | All `PERSON` false positives come from spaCy | Precision | ✅ fixed | `1fca81f` |
+| 7 | Global 0.83 threshold cuts agency names | Recall | ✅ fixed | `891f055` |
+| 8 | Case endings survive outside the placeholder | Output | ✅ fixed via 2 | `089b843` |
+| 9 | Car-plate regex matches money | Precision | ✅ fixed | `bdf8125` |
+| 10 | `hash_type` accepted and ignored | Contract | ✅ fixed | `c8df0a2` |
+| 11 | In-handler validation returns 500 | Contract | ✅ fixed | `e234d1a` |
 
 ## Headline
 
-| | |
-|---|---|
-| Gold spans | 86 — 65 exact, 7 partial, 14 missed |
-| Strict P / R / F1 | 0.707 / 0.823 / 0.760 |
-| Relaxed P / R / F1 | 0.783 / 0.837 / 0.809 |
-| False positives | 20 (10 of them `PERSON`) |
-| Planted traps fired | 1 of 8 |
-| Behaviour cases | 14/24 pass — the 10 failures document the findings below |
-| Latency | 110–190 ms single short text; 1.20 s for a batch of 10 |
+| | audit | after fixes |
+|---|---|---|
+| Strict P / R / F1 | 0.707 / 0.823 / 0.760 | **0.966 / 0.977 / 0.972** |
+| Relaxed F1 | 0.809 | **0.978** |
+| Exact / partial / missed spans | 65 / 7 / 14 | **86 / 1 / 2** |
+| False positives | 20 | **2** |
+| Planted traps fired | 1 of 8 | **0 of 8** |
+| Behaviour cases | 14/24 | **24/24** |
+| Confirmed leak paths | 5 | **0** |
+| Latency, single short text | 135 ms median | 135 ms median |
 
-Structured identifiers score 1.00 across the board. Every failure is in the
-transformer path or the glue code around it.
+Twelve of the fourteen entity types now score 1.00 on precision, recall and F1.
+`ORGANIZATION` is at 0.929/0.929, and one `PHONE_NUMBER` span over-captures a
+closing parenthesis. Latency is unchanged; the gold set grew from 86 to 89 spans
+because three correct detections had been missing from the annotations.
+
+Everything below is the original audit, with a fix note at the top of each
+finding recording what changed and what it measured.
+
+### What is still open
+
+- **`Päästeamet` is never detected** (2 misses). The model does not predict it as
+  an entity at any score, so no threshold recovers it. Needs an upstream model
+  fix or a pattern recognizer for agency names that matter operationally.
+- **Two high-confidence `ORGANIZATION` false positives**: `Riigilõiv`
+  ("state fee") and the `I` of the gazette citation `RT I`, both at ~0.98. Model
+  errors, not tuning ones.
+- **`(+372) 55512345` matches as `+372) 55512345`**, leaving an unbalanced `(` in
+  the output. Over-capture of punctuation, not a leak.
+- **The model exception is still swallowed.** It can no longer fire for input
+  length, but any other failure inside `analyze()` still returns an empty list
+  rather than surfacing.
+- **`entities_to_detect` has not been audited entity-by-entity** against the
+  score threshold. `IP_ADDRESS` was the dead entry this suite exposed; there may
+  be others reachable only through a sub-threshold built-in.
+- **No parallelism.** A batch of ten texts still costs ten times one text;
+  `MAX_WORKERS` in `docker-compose.yml` remains unused.
 
 ## Method note
 
@@ -539,6 +564,21 @@ asking for md5 gets sha256 and no error (64 hex chars in the output).
 
 ### 11. In-handler validation errors are reported as 500
 
+> **✅ FIXED** — the handler now catches `HTTPException` ahead of the blanket
+> `except Exception` and re-raises it, so the status `api.abort()` asked for is
+> the status the client gets. Genuine server faults still return 500.
+>
+> ```
+> {"texts": []}                      400  Field 'texts' cannot be empty
+> {"texts": {"a": 1}}                400  'texts' is not of type 'array'
+> hash_type: "crc32"                 400  Unsupported hash_type 'crc32'
+> type: "scramble"                   400  Unsupported anonymizer type 'scramble'
+> language: "et" (not registered)    500  No matching recognizers were found
+> valid request                      200
+> ```
+>
+> Case `G03` passes. **Behaviour cases 23/24 → 24/24.**
+
 An empty `texts` array is rejected, but the `api.abort(400, …)` doing it is
 raised inside the route's own `try`, caught by the blanket `except Exception`,
 and re-wrapped as a 500 whose body still quotes the original 400. Every
@@ -579,51 +619,95 @@ POST /anonymize {"texts": []}  ->  HTTP 500
 
 ## Per-entity metrics
 
-| Entity | exact | partial | missed | FP | P | R | F1 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| DATE_TIME | 8 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| EMAIL_ADDRESS | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| EST_ID_DOC | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| IBAN_CODE | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| LOCATION / GPE | 5 | 2 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| CREDIT_CARD | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| CRYPTO | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| URL | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| PHONE_NUMBER | 6 | 0 | 0 | 1 | 0.86 | 1.00 | 0.92 |
-| EE_PERSONAL_CODE | 5 | 0 | 1 | 0 | 1.00 | 0.83 | 0.91 |
-| PERSON | 16 | 0 | 0 | 10 | 0.62 | 1.00 | 0.76 |
-| ORGANIZATION | 12 | 5 | 8 | 6 | 0.74 | 0.68 | 0.71 |
-| CAR_NUMBER | 1 | 0 | 2 | 1 | 0.50 | 0.33 | 0.40 |
-| IP_ADDRESS | 0 | 0 | 3 | 0 | 0.00 | 0.00 | 0.00 |
+F1 before the fixes → after. Every entity either improved or held at 1.00.
 
-Latency (3 runs each, median): plain 0.129 s, with allowlist 0.118 s, with
-denylist 0.125 s, both+10 words 0.170 s, batch of 10 texts 1.200 s. Allow/denylist
-arguments cost nothing today — a symptom of finding 5. A batch of ten costs ten
-times one text: `MAX_WORKERS` is set in `docker-compose.yml` but no parallelism
-exists in the handler.
+| Entity | exact | partial | missed | FP | P | R | F1 | was |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| CAR_NUMBER | 3 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.40 |
+| CREDIT_CARD | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| CRYPTO | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| DATE_TIME | 8 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| EE_PERSONAL_CODE | 6 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.91 |
+| EMAIL_ADDRESS | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| EST_ID_DOC | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| IBAN_CODE | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| IP_ADDRESS | 3 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.00 |
+| LOCATION / GPE | 7 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| ORGANIZATION | 26 | 0 | 2 | 2 | 0.93 | 0.93 | **0.93** | 0.71 |
+| PERSON | 16 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.76 |
+| PHONE_NUMBER | 5 | 1 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.92 |
+| URL | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
 
-## Fix order
+Baseline for comparison:
 
-1. **Chunk long input** (1). The only failure that voids detection for a whole
-   document, and chat transcripts routinely exceed the limit. Until it is fixed,
-   no other measurement generalises to production traffic.
-2. **`aggregation_strategy` → `"first"`** (2). One word; stops partial names
-   reaching the response and lifts borderline org scores.
-3. **Vabamorf POS `"S"` → `"H"`** (5). One letter; makes allow/denylist do what
-   the docs claim.
-4. **Give `IP_ADDRESS` a reachable recognizer** (3), then audit the rest of
-   `entities_to_detect` against the 0.83 cut.
-5. **Let denylist spans win overlap resolution** (4).
-6. **Drop `SpacyRecognizer`** (6) — after 1, since spaCy currently masks it.
-   Expect precision to rise sharply.
-7. **Re-measure**, then tune per-entity thresholds (7) and span extension (8).
+| Entity | P | R | F1 |
+|---|---:|---:|---:|
+| PHONE_NUMBER | 0.86 | 1.00 | 0.92 |
+| EE_PERSONAL_CODE | 1.00 | 0.83 | 0.91 |
+| PERSON | 0.62 | 1.00 | 0.76 |
+| ORGANIZATION | 0.74 | 0.68 | 0.71 |
+| CAR_NUMBER | 0.50 | 0.33 | 0.40 |
+| IP_ADDRESS | 0.00 | 0.00 | 0.00 |
 
-## Repo changes made for this audit
+Latency after the fixes (3 runs each, median): plain 0.135 s, with allowlist
+0.116 s, with denylist 0.166 s, both + 10 words 0.209 s, batch of 10 texts
+1.261 s. Against the baseline of 0.129 / 0.118 / 0.125 / 0.170 / 1.200 s, that is
+flat for a single text and about 20 % on the allow/denylist probes — the case
+synthesis now does real work where before it returned the input unchanged, which
+is the cost of finding 5 actually functioning. Windowing costs nothing until a
+text exceeds ~512 tokens, then scales linearly with the number of windows.
 
-- `tests/gov_chat_cases.py`, `tests/test_gov_chats.py`, `tests/results.json` — new.
-- `pyproject.toml` — added `[tool.ruff.lint.per-file-ignores]` allowing `print`
-  under `tests/`, so `T201` does not fail CI on a CLI reporter. `ruff check`,
-  `ruff format --check` and `pyright` are all clean.
+A batch of ten still costs ten times one text: `MAX_WORKERS` is set in
+`docker-compose.yml` but no parallelism exists in the handler.
 
-No application code was changed. The 10 failing behaviour cases each document one
-finding and become regression tests once fixed.
+## Fix order, as executed
+
+The planned order held up, and sequencing turned out to matter in two places.
+
+| Step | Finding | Strict F1 after | Behaviour after |
+|---|---|---|---|
+| 1 | Chunk long input (1) | 0.760 | 15/24 |
+| 2 | Word-level aggregation + span normalization (2, 8) | 0.825 | 16/24 |
+| 3 | Vabamorf POS + allowlist trimming (5) | 0.825 | 19/24 |
+| 4 | Reachable `IP_ADDRESS` recognizer (3) | 0.844 | 19/24 |
+| 5 | Denylist wins overlap (4) | 0.844 | 22/24 |
+| 6 | Drop `SpacyRecognizer` (6) | 0.907 | 22/24 |
+| — | Gold-annotation corrections | 0.939 | 22/24 |
+| 7 | Per-entity thresholds (7) | 0.939 | 22/24 |
+| 8 | Plate and phone patterns (9) | 0.972 | 22/24 |
+| 9 | Forward `hash_type` (10) | 0.972 | 23/24 |
+| 10 | Correct status codes (11) | 0.972 | **24/24** |
+
+Two ordering dependencies were real:
+
+- **Chunking had to precede dropping spaCy.** spaCy was the only source still
+  finding names once the transformer blanked on long input, so removing it first
+  would have deepened the leak instead of fixing a precision problem.
+- **The threshold could only be chosen after aggregation changed.** Word-level
+  aggregation moves every organisation score, so a threshold tuned against the
+  old scores would have been wrong.
+
+Three fixes also needed a second pass because the obvious version introduced a
+new defect: `"first"` aggregation over-captured until `_normalize_span()` was
+added; dropping denylist-overlapping detections would have exposed adjacent
+names until `subtract_spans()` replaced it; and out-scoring the model on plates
+was impossible until ownership was settled in code instead.
+
+## Repo changes
+
+- `tests/gov_chat_cases.py`, `tests/test_gov_chats.py`, `tests/results.json`,
+  `tests/FINDINGS.md` — new.
+- `presidio_flask_estbert.py` — windowing, span normalization, denylist
+  precedence, allowlist trimming, per-entity thresholds, `SpacyRecognizer`
+  removal.
+- `utils.py` — Vabamorf POS selection and multi-word phrase synthesis.
+- `app.py` — `hash` operator branch, operator-type validation, `HTTPException`
+  passthrough.
+- `config/*.yml` — `entity_score_thresholds`, `IpAddress` recognizer, tightened
+  plate and phone patterns. Both configs updated; the stanza one is not on the
+  default path but was kept in step.
+- `pyproject.toml` — `per-file-ignores` allowing `print` under `tests/`, so
+  ruff's `T201` does not fail CI on a CLI reporter.
+
+`ruff check`, `ruff format --check` and `pyright` are clean throughout, and the
+suite exits 0.
