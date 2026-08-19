@@ -1,0 +1,2717 @@
+{
+  "config": {
+    "supported_languages": [
+      "xx"
+    ],
+    "default_score_threshold": 0.83,
+    "entities_to_detect": [
+      "PERSON",
+      "ORGANIZATION",
+      "LOCATION",
+      "GPE",
+      "EMAIL_ADDRESS",
+      "URL",
+      "IP_ADDRESS",
+      "IBAN_CODE",
+      "DATE_TIME",
+      "CRYPTO",
+      "CREDIT_CARD",
+      "CAR_NUMBER",
+      "EE_PERSONAL_CODE",
+      "PHONE_NUMBER",
+      "EST_ID_DOC"
+    ],
+    "estbert_model": "buerokrattRIA/xlm-roberta-NER-syntheticGov",
+    "nlp_engine": "spacy",
+    "custom_recognizers": []
+  },
+  "detection": [
+    {
+      "id": "A01",
+      "group": "A. Agency conversations",
+      "desc": "Tax board: name + personal code + agency",
+      "text": "Tere! Minu nimi on Jaan Tamm, isikukood 38001085718. Soovin teada, kas mul on Maksu- ja Tolliametile maksuvõlga.",
+      "elapsed": 0.6141722179891076,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Maksu- ja Tolliametile",
+          "type": "ORGANIZATION",
+          "span": [
+            78,
+            100
+          ]
+        },
+        {
+          "surface": "Soovin",
+          "type": "PERSON",
+          "span": [
+            53,
+            59
+          ]
+        },
+        {
+          "surface": "38001085718",
+          "type": "EE_PERSONAL_CODE",
+          "span": [
+            40,
+            51
+          ]
+        },
+        {
+          "surface": "Jaan Tamm",
+          "type": "PERSON",
+          "span": [
+            19,
+            28
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Jaan Tamm",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Jaan Tamm",
+          "wrong_labels": []
+        },
+        {
+          "surface": "38001085718",
+          "types": [
+            "EE_PERSONAL_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EE_PERSONAL_CODE",
+          "got_surface": "38001085718",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Maksu- ja Tolliametile",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Maksu- ja Tolliametile",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Soovin",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "A02",
+      "group": "A. Agency conversations",
+      "desc": "Unemployment fund: name, phone, email",
+      "text": "Klient: Mari Mets soovib end Töötukassas töötuna arvele võtta. Telefon +372 5555 5555, e-post mari.mets@gmail.com.",
+      "elapsed": 1.1944806490209885,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "mari.mets@gmail.com",
+          "type": "EMAIL_ADDRESS",
+          "span": [
+            94,
+            113
+          ]
+        },
+        {
+          "surface": "+372 5555 5555",
+          "type": "PHONE_NUMBER",
+          "span": [
+            71,
+            85
+          ]
+        },
+        {
+          "surface": "Töötukassas",
+          "type": "PERSON",
+          "span": [
+            29,
+            40
+          ]
+        },
+        {
+          "surface": "Mari Mets",
+          "type": "PERSON",
+          "span": [
+            8,
+            17
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Mari Mets",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Mari Mets",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Töötukassas",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": [
+            "PERSON"
+          ]
+        },
+        {
+          "surface": "+372 5555 5555",
+          "types": [
+            "PHONE_NUMBER"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PHONE_NUMBER",
+          "got_surface": "+372 5555 5555",
+          "wrong_labels": []
+        },
+        {
+          "surface": "mari.mets@gmail.com",
+          "types": [
+            "EMAIL_ADDRESS"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EMAIL_ADDRESS",
+          "got_surface": "mari.mets@gmail.com",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Töötukassas",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "A03",
+      "group": "A. Agency conversations",
+      "desc": "Social insurance board: pension payment to IBAN",
+      "text": "Sotsiaalkindlustusamet kannab Kalle Kase pensioni kontole EE382200221020145685 alates 01.09.2026.",
+      "elapsed": 0.6423818629991729,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "01.09.2026",
+          "type": "DATE_TIME",
+          "span": [
+            86,
+            96
+          ]
+        },
+        {
+          "surface": "EE382200221020145685",
+          "type": "IBAN_CODE",
+          "span": [
+            58,
+            78
+          ]
+        },
+        {
+          "surface": "Kalle Kase",
+          "type": "PERSON",
+          "span": [
+            30,
+            40
+          ]
+        },
+        {
+          "surface": "Sotsiaalkindlustusamet",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            22
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Sotsiaalkindlustusamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Sotsiaalkindlustusamet",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Kalle Kase",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Kalle Kase",
+          "wrong_labels": []
+        },
+        {
+          "surface": "EE382200221020145685",
+          "types": [
+            "IBAN_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "IBAN_CODE",
+          "got_surface": "EE382200221020145685",
+          "wrong_labels": []
+        },
+        {
+          "surface": "01.09.2026",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "01.09.2026",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "A04",
+      "group": "A. Agency conversations",
+      "desc": "Police and border guard: ID document number",
+      "text": "Politsei- ja Piirivalveamet väljastas Peeter Kuusele isikutunnistuse AA1234567, mis kehtib kuni 12.03.2031.",
+      "elapsed": 0.5483162610034924,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "12.03.2031",
+          "type": "DATE_TIME",
+          "span": [
+            96,
+            106
+          ]
+        },
+        {
+          "surface": "AA1234567",
+          "type": "EST_ID_DOC",
+          "span": [
+            69,
+            78
+          ]
+        },
+        {
+          "surface": "Peeter Kuusele",
+          "type": "PERSON",
+          "span": [
+            38,
+            52
+          ]
+        },
+        {
+          "surface": "Politsei- ja Piirivalveamet",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            27
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Politsei- ja Piirivalveamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Politsei- ja Piirivalveamet",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Peeter Kuusele",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Peeter Kuusele",
+          "wrong_labels": []
+        },
+        {
+          "surface": "AA1234567",
+          "types": [
+            "EST_ID_DOC"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EST_ID_DOC",
+          "got_surface": "AA1234567",
+          "wrong_labels": []
+        },
+        {
+          "surface": "12.03.2031",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "12.03.2031",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "A05",
+      "group": "A. Agency conversations",
+      "desc": "Transport administration: car registration number",
+      "text": "Transpordiamet kinnitas, et sõiduk registreerimismärgiga 123 ABC kuulub Tiit Saarele.",
+      "elapsed": 0.5720699830271769,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Tiit Saarele",
+          "type": "PERSON",
+          "span": [
+            72,
+            84
+          ]
+        },
+        {
+          "surface": "123 ABC",
+          "type": "ORGANIZATION",
+          "span": [
+            57,
+            64
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Transpordiamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": []
+        },
+        {
+          "surface": "123 ABC",
+          "types": [
+            "CAR_NUMBER"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": [
+            "ORGANIZATION"
+          ]
+        },
+        {
+          "surface": "Tiit Saarele",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Tiit Saarele",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "123 ABC",
+          "type": "ORGANIZATION"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "A06",
+      "group": "A. Agency conversations",
+      "desc": "Health insurance fund: patient with personal code",
+      "text": "Tervisekassa andmetel on Liis Oja (isikukood 49403136515) ravikindlustus kehtiv.",
+      "elapsed": 0.524266666994663,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "ravikindlustus kehtiv",
+          "type": "PERSON",
+          "span": [
+            58,
+            79
+          ]
+        },
+        {
+          "surface": "49403136515",
+          "type": "EE_PERSONAL_CODE",
+          "span": [
+            45,
+            56
+          ]
+        },
+        {
+          "surface": "Liis Oja",
+          "type": "PERSON",
+          "span": [
+            25,
+            33
+          ]
+        },
+        {
+          "surface": "Tervisekassa",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            12
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Tervisekassa",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Tervisekassa",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Liis Oja",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Liis Oja",
+          "wrong_labels": []
+        },
+        {
+          "surface": "49403136515",
+          "types": [
+            "EE_PERSONAL_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EE_PERSONAL_CODE",
+          "got_surface": "49403136515",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "ravikindlustus kehtiv",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "A07",
+      "group": "A. Agency conversations",
+      "desc": "City government: street address change",
+      "text": "Palun teatage Tallinna Linnavalitsusele, et Anne Lepik kolis aadressilt Liivalaia 2 aadressile Narva maantee 15, Tallinn.",
+      "elapsed": 0.7129646370012779,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Tallinn",
+          "type": "GPE",
+          "span": [
+            113,
+            120
+          ]
+        },
+        {
+          "surface": "Narva maantee 15",
+          "type": "LOCATION",
+          "span": [
+            95,
+            111
+          ]
+        },
+        {
+          "surface": "Liivalaia 2",
+          "type": "LOCATION",
+          "span": [
+            72,
+            83
+          ]
+        },
+        {
+          "surface": "Anne Lepik",
+          "type": "PERSON",
+          "span": [
+            44,
+            54
+          ]
+        },
+        {
+          "surface": "Tallinna Linnavalitsusele",
+          "type": "PERSON",
+          "span": [
+            14,
+            39
+          ]
+        },
+        {
+          "surface": "Palun",
+          "type": "PERSON",
+          "span": [
+            0,
+            5
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Tallinna Linnavalitsusele",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": [
+            "PERSON"
+          ]
+        },
+        {
+          "surface": "Anne Lepik",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Anne Lepik",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Liivalaia 2",
+          "types": [
+            "GPE",
+            "LOCATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "LOCATION",
+          "got_surface": "Liivalaia 2",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Narva maantee 15",
+          "types": [
+            "GPE",
+            "LOCATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "LOCATION",
+          "got_surface": "Narva maantee 15",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Tallinn",
+          "types": [
+            "GPE",
+            "LOCATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "GPE",
+          "got_surface": "Tallinn",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Tallinna Linnavalitsusele",
+          "type": "PERSON"
+        },
+        {
+          "surface": "Palun",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "A08",
+      "group": "A. Agency conversations",
+      "desc": "State information system authority: email, URL, IP",
+      "text": "Riigi Infosüsteemi Amet teatas, et kasutaja toomas.raud@ria.ee logis sisse aadressilt 192.168.10.24 portaalis www.eesti.ee.",
+      "elapsed": 0.6796495630114805,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "www.eesti.ee",
+          "type": "URL",
+          "span": [
+            110,
+            122
+          ]
+        },
+        {
+          "surface": "toomas.raud@ria.ee",
+          "type": "EMAIL_ADDRESS",
+          "span": [
+            44,
+            62
+          ]
+        },
+        {
+          "surface": "Riigi Infosüsteemi Amet",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            23
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Riigi Infosüsteemi Amet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Riigi Infosüsteemi Amet",
+          "wrong_labels": []
+        },
+        {
+          "surface": "toomas.raud@ria.ee",
+          "types": [
+            "EMAIL_ADDRESS"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EMAIL_ADDRESS",
+          "got_surface": "toomas.raud@ria.ee",
+          "wrong_labels": []
+        },
+        {
+          "surface": "192.168.10.24",
+          "types": [
+            "IP_ADDRESS"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": []
+        },
+        {
+          "surface": "www.eesti.ee",
+          "types": [
+            "URL"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "URL",
+          "got_surface": "www.eesti.ee",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "A09",
+      "group": "A. Agency conversations",
+      "desc": "Rescue board: caller, phone, address, clock time",
+      "text": "Päästeamet sai kell 14:30 teate Katrin Ilvese telefonilt 5551234, et Pärnu mnt 42 korteris on suitsulõhn.",
+      "elapsed": 0.48871635299292393,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Pärnu mnt 42",
+          "type": "LOCATION",
+          "span": [
+            69,
+            81
+          ]
+        },
+        {
+          "surface": "5551234",
+          "type": "PHONE_NUMBER",
+          "span": [
+            57,
+            64
+          ]
+        },
+        {
+          "surface": "Katrin Ilvese",
+          "type": "PERSON",
+          "span": [
+            32,
+            45
+          ]
+        },
+        {
+          "surface": "14:30",
+          "type": "DATE_TIME",
+          "span": [
+            20,
+            25
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Päästeamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": []
+        },
+        {
+          "surface": "14:30",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "14:30",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Katrin Ilvese",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Katrin Ilvese",
+          "wrong_labels": []
+        },
+        {
+          "surface": "5551234",
+          "types": [
+            "PHONE_NUMBER"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PHONE_NUMBER",
+          "got_surface": "5551234",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Pärnu mnt 42",
+          "types": [
+            "GPE",
+            "LOCATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "LOCATION",
+          "got_surface": "Pärnu mnt 42",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "A10",
+      "group": "A. Agency conversations",
+      "desc": "Parliament: petition signed on a spelled-out date",
+      "text": "Riigikogu menetles kollektiivset pöördumist, mille esitas Urmas Vaher 15 märts 2026 e-posti aadressilt urmas@petitsioon.ee.",
+      "elapsed": 0.40634267998393625,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "urmas@petitsioon.ee",
+          "type": "EMAIL_ADDRESS",
+          "span": [
+            103,
+            122
+          ]
+        },
+        {
+          "surface": "15 märts 2026",
+          "type": "DATE_TIME",
+          "span": [
+            70,
+            83
+          ]
+        },
+        {
+          "surface": "Urmas Vaher",
+          "type": "PERSON",
+          "span": [
+            58,
+            69
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Riigikogu",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": []
+        },
+        {
+          "surface": "Urmas Vaher",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Urmas Vaher",
+          "wrong_labels": []
+        },
+        {
+          "surface": "15 märts 2026",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "15 märts 2026",
+          "wrong_labels": []
+        },
+        {
+          "surface": "urmas@petitsioon.ee",
+          "types": [
+            "EMAIL_ADDRESS"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EMAIL_ADDRESS",
+          "got_surface": "urmas@petitsioon.ee",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "B01",
+      "group": "B. Morphology",
+      "desc": "Person name inflected (allative, genitive) across a dialogue",
+      "text": "Nõustaja: Kas te rääkisite Jaan Tammele? Klient: Jah, Jaan Tamme avaldus on juba esitatud.",
+      "elapsed": 0.21810626299702562,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Jaan Tamme",
+          "type": "PERSON",
+          "span": [
+            54,
+            64
+          ]
+        },
+        {
+          "surface": "Jah",
+          "type": "PERSON",
+          "span": [
+            49,
+            52
+          ]
+        },
+        {
+          "surface": "Jaan Tammele",
+          "type": "PERSON",
+          "span": [
+            27,
+            39
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Jaan Tammele",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Jaan Tammele",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Jaan Tamme",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Jaan Tamme",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Jah",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "B02",
+      "group": "B. Morphology",
+      "desc": "Agency names in illative and ablative case",
+      "text": "Avaldus tuleb esitada Maksu- ja Tolliametisse ning koopia saata Töötukassalt saadud kirjaga Sotsiaalkindlustusametile.",
+      "elapsed": 0.17889819398988038,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Sotsiaalkindlustusameti",
+          "type": "ORGANIZATION",
+          "span": [
+            92,
+            115
+          ]
+        },
+        {
+          "surface": "Töötukassalt",
+          "type": "LOCATION",
+          "span": [
+            64,
+            76
+          ]
+        },
+        {
+          "surface": "Maksu- ja Tolliameti",
+          "type": "ORGANIZATION",
+          "span": [
+            22,
+            42
+          ]
+        },
+        {
+          "surface": "Avaldus",
+          "type": "PERSON",
+          "span": [
+            0,
+            7
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Maksu- ja Tolliametisse",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "overlap",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Maksu- ja Tolliameti",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Töötukassalt",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": [
+            "LOCATION"
+          ]
+        },
+        {
+          "surface": "Sotsiaalkindlustusametile",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "overlap",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Sotsiaalkindlustusameti",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Töötukassalt",
+          "type": "LOCATION"
+        },
+        {
+          "surface": "Avaldus",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "B03",
+      "group": "B. Morphology",
+      "desc": "City names in inessive/elative case",
+      "text": "Kadri Sepp elab Tallinnas, kolis sinna Tartust ja töötas varem Narvas Politsei- ja Piirivalveametis.",
+      "elapsed": 0.19197112097754143,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Politsei- ja Piirivalveameti",
+          "type": "ORGANIZATION",
+          "span": [
+            70,
+            98
+          ]
+        },
+        {
+          "surface": "Narva",
+          "type": "GPE",
+          "span": [
+            63,
+            68
+          ]
+        },
+        {
+          "surface": "Tartu",
+          "type": "GPE",
+          "span": [
+            39,
+            44
+          ]
+        },
+        {
+          "surface": "Tallinnas",
+          "type": "GPE",
+          "span": [
+            16,
+            25
+          ]
+        },
+        {
+          "surface": "Kadri Sepp",
+          "type": "PERSON",
+          "span": [
+            0,
+            10
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Kadri Sepp",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Kadri Sepp",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Tallinnas",
+          "types": [
+            "GPE",
+            "LOCATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "GPE",
+          "got_surface": "Tallinnas",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Tartust",
+          "types": [
+            "GPE",
+            "LOCATION"
+          ],
+          "matched": true,
+          "mode": "overlap",
+          "got_type": "GPE",
+          "got_surface": "Tartu",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Narvas",
+          "types": [
+            "GPE",
+            "LOCATION"
+          ],
+          "matched": true,
+          "mode": "overlap",
+          "got_type": "GPE",
+          "got_surface": "Narva",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Politsei- ja Piirivalveametis",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "overlap",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Politsei- ja Piirivalveameti",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "B04",
+      "group": "B. Morphology",
+      "desc": "Names with Estonian diacritics and foreign letters",
+      "text": "Kärt Õunapuu ja Jüri Müür esitasid Keskkonnaametile kaebuse, millele vastas Žanna Šišova.",
+      "elapsed": 0.20157986599951982,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Žanna Šišova",
+          "type": "PERSON",
+          "span": [
+            76,
+            88
+          ]
+        },
+        {
+          "surface": "Keskkonnaameti",
+          "type": "ORGANIZATION",
+          "span": [
+            35,
+            49
+          ]
+        },
+        {
+          "surface": "Jüri Müür",
+          "type": "PERSON",
+          "span": [
+            16,
+            25
+          ]
+        },
+        {
+          "surface": "Kärt Õunapuu",
+          "type": "PERSON",
+          "span": [
+            0,
+            12
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Kärt Õunapuu",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Kärt Õunapuu",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Jüri Müür",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Jüri Müür",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Keskkonnaametile",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "overlap",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Keskkonnaameti",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Žanna Šišova",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Žanna Šišova",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "B05",
+      "group": "B. Morphology",
+      "desc": "Hyphenated given name and double surname",
+      "text": "Mari-Liis Kask-Tamm pöördus Justiitsministeeriumi poole isikukoodiga 47001010001.",
+      "elapsed": 0.2242783420078922,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "47001010001",
+          "type": "EE_PERSONAL_CODE",
+          "span": [
+            69,
+            80
+          ]
+        },
+        {
+          "surface": "Justiitsministeeriumi",
+          "type": "ORGANIZATION",
+          "span": [
+            28,
+            49
+          ]
+        },
+        {
+          "surface": "Mari-Liis Kask-Tamm",
+          "type": "PERSON",
+          "span": [
+            0,
+            19
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Mari-Liis Kask-Tamm",
+          "types": [
+            "PERSON"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PERSON",
+          "got_surface": "Mari-Liis Kask-Tamm",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Justiitsministeeriumi",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Justiitsministeeriumi",
+          "wrong_labels": []
+        },
+        {
+          "surface": "47001010001",
+          "types": [
+            "EE_PERSONAL_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EE_PERSONAL_CODE",
+          "got_surface": "47001010001",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "C01",
+      "group": "C. Pattern recognizers",
+      "desc": "Several valid personal codes in one message",
+      "text": "Perekonna isikukoodid: 38001085718, 49403136515 ja 61203074321 on Rahvastikuregistris kontrollitud.",
+      "elapsed": 0.27104408500599675,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "61203074321",
+          "type": "EE_PERSONAL_CODE",
+          "span": [
+            51,
+            62
+          ]
+        },
+        {
+          "surface": " 49403136515",
+          "type": "PHONE_NUMBER",
+          "span": [
+            35,
+            47
+          ]
+        },
+        {
+          "surface": "38001085718",
+          "type": "EE_PERSONAL_CODE",
+          "span": [
+            23,
+            34
+          ]
+        },
+        {
+          "surface": "Perekonna",
+          "type": "PERSON",
+          "span": [
+            0,
+            9
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "38001085718",
+          "types": [
+            "EE_PERSONAL_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EE_PERSONAL_CODE",
+          "got_surface": "38001085718",
+          "wrong_labels": []
+        },
+        {
+          "surface": "49403136515",
+          "types": [
+            "EE_PERSONAL_CODE"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": [
+            "PHONE_NUMBER"
+          ]
+        },
+        {
+          "surface": "61203074321",
+          "types": [
+            "EE_PERSONAL_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EE_PERSONAL_CODE",
+          "got_surface": "61203074321",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": " 49403136515",
+          "type": "PHONE_NUMBER"
+        },
+        {
+          "surface": "Perekonna",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "C02",
+      "group": "C. Pattern recognizers",
+      "desc": "Four phone number formats",
+      "text": "Helistage Maksu- ja Tolliameti infotelefonile 8800811 või +372 5555 5555, vajadusel 372 5551234 ja (+372) 55512345.",
+      "elapsed": 0.3312432130041998,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "55512345",
+          "type": "PHONE_NUMBER",
+          "span": [
+            106,
+            114
+          ]
+        },
+        {
+          "surface": "372 5551234",
+          "type": "PHONE_NUMBER",
+          "span": [
+            84,
+            95
+          ]
+        },
+        {
+          "surface": "+372 5555 5555",
+          "type": "PHONE_NUMBER",
+          "span": [
+            58,
+            72
+          ]
+        },
+        {
+          "surface": "8800811",
+          "type": "PHONE_NUMBER",
+          "span": [
+            46,
+            53
+          ]
+        },
+        {
+          "surface": "Maksu- ja Tolliameti",
+          "type": "ORGANIZATION",
+          "span": [
+            10,
+            30
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "8800811",
+          "types": [
+            "PHONE_NUMBER"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PHONE_NUMBER",
+          "got_surface": "8800811",
+          "wrong_labels": []
+        },
+        {
+          "surface": "+372 5555 5555",
+          "types": [
+            "PHONE_NUMBER"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PHONE_NUMBER",
+          "got_surface": "+372 5555 5555",
+          "wrong_labels": []
+        },
+        {
+          "surface": "372 5551234",
+          "types": [
+            "PHONE_NUMBER"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PHONE_NUMBER",
+          "got_surface": "372 5551234",
+          "wrong_labels": []
+        },
+        {
+          "surface": "55512345",
+          "types": [
+            "PHONE_NUMBER"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "PHONE_NUMBER",
+          "got_surface": "55512345",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Maksu- ja Tolliameti",
+          "type": "ORGANIZATION"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "C03",
+      "group": "C. Pattern recognizers",
+      "desc": "Estonian and foreign IBAN",
+      "text": "Riigilõiv kanti kontole EE382200221020145685, tagasimakse kontole LT121000011101001000.",
+      "elapsed": 0.19709979099570774,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "LT121000011101001000",
+          "type": "IBAN_CODE",
+          "span": [
+            66,
+            86
+          ]
+        },
+        {
+          "surface": "EE382200221020145685",
+          "type": "IBAN_CODE",
+          "span": [
+            24,
+            44
+          ]
+        },
+        {
+          "surface": "Riigilõiv",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            9
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "EE382200221020145685",
+          "types": [
+            "IBAN_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "IBAN_CODE",
+          "got_surface": "EE382200221020145685",
+          "wrong_labels": []
+        },
+        {
+          "surface": "LT121000011101001000",
+          "types": [
+            "IBAN_CODE"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "IBAN_CODE",
+          "got_surface": "LT121000011101001000",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Riigilõiv",
+          "type": "ORGANIZATION"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "C04",
+      "group": "C. Pattern recognizers",
+      "desc": "Car number vs. a money amount with the same shape",
+      "text": "Transpordiamet: sõiduk 123 ABC sai trahvi summas 500 EUR, teine sõiduk 45 XYZ jäi hoiatusega.",
+      "elapsed": 0.28202070700353943,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "45 XYZ",
+          "type": "CAR_NUMBER",
+          "span": [
+            71,
+            77
+          ]
+        },
+        {
+          "surface": "500 EUR",
+          "type": "CAR_NUMBER",
+          "span": [
+            49,
+            56
+          ]
+        },
+        {
+          "surface": "123 ABC",
+          "type": "ORGANIZATION",
+          "span": [
+            23,
+            30
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "123 ABC",
+          "types": [
+            "CAR_NUMBER"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": [
+            "ORGANIZATION"
+          ]
+        },
+        {
+          "surface": "45 XYZ",
+          "types": [
+            "CAR_NUMBER"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "CAR_NUMBER",
+          "got_surface": "45 XYZ",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "500 EUR",
+          "type": "CAR_NUMBER"
+        },
+        {
+          "surface": "123 ABC",
+          "type": "ORGANIZATION"
+        }
+      ],
+      "trap_hits": [
+        {
+          "surface": "500 EUR",
+          "as": "CAR_NUMBER",
+          "detected": "500 EUR"
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "group": "C. Pattern recognizers",
+      "desc": "Estonian document number prefixes",
+      "text": "Politsei- ja Piirivalveamet: pass AA1234567 ja elamisluba PB7654321 on kehtetud.",
+      "elapsed": 0.20572881199768744,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "PB7654321",
+          "type": "EST_ID_DOC",
+          "span": [
+            58,
+            67
+          ]
+        },
+        {
+          "surface": "AA1234567",
+          "type": "EST_ID_DOC",
+          "span": [
+            34,
+            43
+          ]
+        },
+        {
+          "surface": "Politsei- ja Piirivalveamet",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            27
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "AA1234567",
+          "types": [
+            "EST_ID_DOC"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EST_ID_DOC",
+          "got_surface": "AA1234567",
+          "wrong_labels": []
+        },
+        {
+          "surface": "PB7654321",
+          "types": [
+            "EST_ID_DOC"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "EST_ID_DOC",
+          "got_surface": "PB7654321",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Politsei- ja Piirivalveamet",
+          "type": "ORGANIZATION"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "C06",
+      "group": "C. Pattern recognizers",
+      "desc": "Numeric, spelled-out and inflected dates plus a time",
+      "text": "Otsus tehti 12.03.2026, teade saadeti 15 märts 2026, istung toimub 20 aprillil 2026 kell 09:15.",
+      "elapsed": 0.16402947501046583,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "09:15",
+          "type": "DATE_TIME",
+          "span": [
+            89,
+            94
+          ]
+        },
+        {
+          "surface": "20 aprillil 2026",
+          "type": "DATE_TIME",
+          "span": [
+            67,
+            83
+          ]
+        },
+        {
+          "surface": "15 märts 2026",
+          "type": "DATE_TIME",
+          "span": [
+            38,
+            51
+          ]
+        },
+        {
+          "surface": "12.03.2026",
+          "type": "DATE_TIME",
+          "span": [
+            12,
+            22
+          ]
+        },
+        {
+          "surface": "Otsus",
+          "type": "PERSON",
+          "span": [
+            0,
+            5
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "12.03.2026",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "12.03.2026",
+          "wrong_labels": []
+        },
+        {
+          "surface": "15 märts 2026",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "15 märts 2026",
+          "wrong_labels": []
+        },
+        {
+          "surface": "20 aprillil 2026",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "20 aprillil 2026",
+          "wrong_labels": []
+        },
+        {
+          "surface": "09:15",
+          "types": [
+            "DATE_TIME"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "DATE_TIME",
+          "got_surface": "09:15",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Otsus",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "C07",
+      "group": "C. Pattern recognizers",
+      "desc": "Credit card and crypto address",
+      "text": "Riigilõivu tasumine kaardiga 4111 1111 1111 1111 ebaõnnestus, krüptomakse aadressile 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2 samuti.",
+      "elapsed": 0.15931035100948066,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+          "type": "CRYPTO",
+          "span": [
+            85,
+            119
+          ]
+        },
+        {
+          "surface": "4111 1111 1111 1111",
+          "type": "CREDIT_CARD",
+          "span": [
+            29,
+            48
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "4111 1111 1111 1111",
+          "types": [
+            "CREDIT_CARD"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "CREDIT_CARD",
+          "got_surface": "4111 1111 1111 1111",
+          "wrong_labels": []
+        },
+        {
+          "surface": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+          "types": [
+            "CRYPTO"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "CRYPTO",
+          "got_surface": "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "D01",
+      "group": "D. Precision traps",
+      "desc": "Purely institutional text, no personal data at all",
+      "text": "Maksu- ja Tolliamet avaldas teate, et e-maksuamet on hoolduse tõttu suletud. Küsimustega pöörduge klienditoe poole.",
+      "elapsed": 0.244977102993289,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Küsimustega",
+          "type": "LOCATION",
+          "span": [
+            77,
+            88
+          ]
+        },
+        {
+          "surface": "Maksu- ja Tolliamet",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            19
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Maksu- ja Tolliamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Maksu- ja Tolliamet",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Küsimustega",
+          "type": "LOCATION"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "D02",
+      "group": "D. Precision traps",
+      "desc": "Money sums and a payment reference number",
+      "text": "Maksuteade: summa 1250,50 eurot, viitenumber 2900123456, tähtaeg möödas. Intress 0,06% päevas.",
+      "elapsed": 0.3936212050030008,
+      "text_unchanged": true,
+      "detected": [],
+      "gold": [],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "D03",
+      "group": "D. Precision traps",
+      "desc": "Statute and gazette references",
+      "text": "Vastavalt maksukorralduse seaduse § 32 lõikele 2 (RT I 2002, 26, 150) on Maksu- ja Tolliametil õigus nõuda andmeid.",
+      "elapsed": 0.2081872779817786,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Maksu- ja Tolliametil",
+          "type": "ORGANIZATION",
+          "span": [
+            73,
+            94
+          ]
+        },
+        {
+          "surface": "RT I",
+          "type": "ORGANIZATION",
+          "span": [
+            50,
+            54
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Maksu- ja Tolliametil",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Maksu- ja Tolliametil",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "RT I",
+          "type": "ORGANIZATION"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "D04",
+      "group": "D. Precision traps",
+      "desc": "Institution names that are not people",
+      "text": "Vabariigi Valitsus ja Riigikogu kinnitasid, et Statistikaamet avaldab andmed järgmisel nädalal.",
+      "elapsed": 0.12619129300583154,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Statistikaamet",
+          "type": "ORGANIZATION",
+          "span": [
+            47,
+            61
+          ]
+        },
+        {
+          "surface": "Riigikogu",
+          "type": "ORGANIZATION",
+          "span": [
+            22,
+            31
+          ]
+        },
+        {
+          "surface": "Vabariigi Valitsus",
+          "type": "PERSON",
+          "span": [
+            0,
+            18
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Vabariigi Valitsus",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": [
+            "PERSON"
+          ]
+        },
+        {
+          "surface": "Riigikogu",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Riigikogu",
+          "wrong_labels": []
+        },
+        {
+          "surface": "Statistikaamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Statistikaamet",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [
+        {
+          "surface": "Vabariigi Valitsus",
+          "type": "PERSON"
+        }
+      ],
+      "trap_hits": []
+    },
+    {
+      "id": "D05",
+      "group": "D. Precision traps",
+      "desc": "Court case number and room number",
+      "text": "Haldusasi 3-21-1234 arutatakse ruumis 305. Kohtunik teatas otsuse edastamisest Justiitsministeeriumile.",
+      "elapsed": 0.11898525501601398,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Justiitsministeeriumi",
+          "type": "ORGANIZATION",
+          "span": [
+            79,
+            100
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Justiitsministeeriumile",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "overlap",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Justiitsministeeriumi",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "D06",
+      "group": "D. Precision traps",
+      "desc": "Agency name as the first word of a short sentence",
+      "text": "Päästeamet sai teate. Transpordiamet kinnitas otsuse.",
+      "elapsed": 0.09182386100292206,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Transpordiamet",
+          "type": "ORGANIZATION",
+          "span": [
+            22,
+            36
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Päästeamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": []
+        },
+        {
+          "surface": "Transpordiamet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Transpordiamet",
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    },
+    {
+      "id": "D07",
+      "group": "D. Precision traps",
+      "desc": "IPv4 with an explicit context word (threshold reachability)",
+      "text": "Riigi Infosüsteemi Amet: serveri IP on 192.168.10.24 ja IPv6 2001:db8::1.",
+      "elapsed": 0.2123147109814454,
+      "text_unchanged": true,
+      "detected": [
+        {
+          "surface": "Riigi Infosüsteemi Amet",
+          "type": "ORGANIZATION",
+          "span": [
+            0,
+            23
+          ]
+        }
+      ],
+      "gold": [
+        {
+          "surface": "Riigi Infosüsteemi Amet",
+          "types": [
+            "ORGANIZATION"
+          ],
+          "matched": true,
+          "mode": "exact",
+          "got_type": "ORGANIZATION",
+          "got_surface": "Riigi Infosüsteemi Amet",
+          "wrong_labels": []
+        },
+        {
+          "surface": "192.168.10.24",
+          "types": [
+            "IP_ADDRESS"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": []
+        },
+        {
+          "surface": "2001:db8::1",
+          "types": [
+            "IP_ADDRESS"
+          ],
+          "matched": false,
+          "mode": null,
+          "got_type": null,
+          "got_surface": null,
+          "wrong_labels": []
+        }
+      ],
+      "false_positives": [],
+      "trap_hits": []
+    }
+  ],
+  "behaviour": [
+    {
+      "id": "E01",
+      "group": "E. Allow/denylist",
+      "desc": "Allowlisted agency name survives anonymisation",
+      "status": 200,
+      "elapsed": 0.1441247950133402,
+      "passed": false,
+      "failures": [
+        "expected to KEEP 'Maksu- ja Tolliametis' but it is gone"
+      ],
+      "notes": [],
+      "output": "[ISIK] töötab [ORGANISATSIOON] [GPE]."
+    },
+    {
+      "id": "E02",
+      "group": "E. Allow/denylist",
+      "desc": "Allowlist base form must cover an inflected mention (Vabamorf synthesis)",
+      "status": 200,
+      "elapsed": 0.05603675200836733,
+      "passed": false,
+      "failures": [
+        "expected to KEEP 'Tallinnas' but it is gone"
+      ],
+      "notes": [],
+      "output": "[ISIK] käis [GPE] [ORGANISATSIOON] vastuvõtul."
+    },
+    {
+      "id": "E03",
+      "group": "E. Allow/denylist",
+      "desc": "Denylisted codename in base form is forced to PII",
+      "status": 200,
+      "elapsed": 0.09093482300522737,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "Projekt [SALASTATUD] on [PII] siseprojekt."
+    },
+    {
+      "id": "E04",
+      "group": "E. Allow/denylist",
+      "desc": "Denylist base form must cover an inflected mention",
+      "status": 200,
+      "elapsed": 0.10153342099511065,
+      "passed": false,
+      "failures": [
+        "expected output to contain '[SALASTATUD]'"
+      ],
+      "notes": [],
+      "output": "[PII] osales ka [PII]."
+    },
+    {
+      "id": "E05",
+      "group": "E. Allow/denylist",
+      "desc": "Allowlist and denylist together in one request",
+      "status": 200,
+      "elapsed": 0.1476744539977517,
+      "passed": false,
+      "failures": [
+        "expected to KEEP 'Maksu- ja Tolliametist' but it is gone",
+        "expected to KEEP 'Tallinnas' but it is gone",
+        "expected output to contain '[SALASTATUD]'"
+      ],
+      "notes": [],
+      "output": "[ISIK] [PII] juhib projekti [PII]."
+    },
+    {
+      "id": "E06",
+      "group": "E. Allow/denylist",
+      "desc": "Allowlist entry matching the surface form exactly (mechanism check)",
+      "status": 200,
+      "elapsed": 0.06241544699878432,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "[ISIK] käis Tallinnas [ORGANISATSIOON] vastuvõtul."
+    },
+    {
+      "id": "E07",
+      "group": "E. Allow/denylist",
+      "desc": "Denylist entry matching the surface form exactly (mechanism check)",
+      "status": 200,
+      "elapsed": 0.08851371001219377,
+      "passed": false,
+      "failures": [
+        "expected output to contain '[SALASTATUD]'"
+      ],
+      "notes": [],
+      "output": "[PII] osales ka [PII]."
+    },
+    {
+      "id": "F01",
+      "group": "F. Operators",
+      "desc": "DEFAULT replace applies to every entity type",
+      "status": 200,
+      "elapsed": 0.10491227000602521,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "[VARJATUD], isikukood [VARJATUD], helistas numbril [VARJATUD]."
+    },
+    {
+      "id": "F02",
+      "group": "F. Operators",
+      "desc": "mask operator with masking_char and chars_to_mask",
+      "status": 200,
+      "elapsed": 0.09147073599160649,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "Isikukood 3800XXXXXXX kuulub [ISIK]."
+    },
+    {
+      "id": "F03",
+      "group": "F. Operators",
+      "desc": "redact removes the span entirely",
+      "status": 200,
+      "elapsed": 0.09532966397819109,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "Kaebuse esitas ."
+    },
+    {
+      "id": "F04",
+      "group": "F. Operators",
+      "desc": "hash with explicit hash_type (md5) - is the parameter forwarded?",
+      "status": 200,
+      "elapsed": 0.15935436598374508,
+      "passed": false,
+      "failures": [
+        "hash_type=md5 silently dropped (output is sha256)"
+      ],
+      "notes": [
+        "declared hash_type=md5 IGNORED, output used sha256"
+      ],
+      "output": "Isikukood c6a32cd2f902affa46a9468d8ed1d4a2f4bce44d8b49be3c1608e325437ae867 on registreeritud."
+    },
+    {
+      "id": "F05",
+      "group": "F. Operators",
+      "desc": "encrypt on one entity, keep on another",
+      "status": 200,
+      "elapsed": 0.1272587199928239,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "g9doX0HpnKsu26I0jUC1B7UxTnBXPvrtgwl4/lMJmvE= elab Tallinnas."
+    },
+    {
+      "id": "F06",
+      "group": "F. Operators",
+      "desc": "No anonymizers - YAML default_operators supply Estonian placeholders",
+      "status": 200,
+      "elapsed": 0.10406723100459203,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "[ISIK], isikukood [ISIKUKOOD], e-post [E-POST]."
+    },
+    {
+      "id": "F07",
+      "group": "F. Operators",
+      "desc": "entities filter restricts detection to PERSON only",
+      "status": 200,
+      "elapsed": 0.10568591402261518,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "[X], isikukood 38001085718, helistas numbril 5551234."
+    },
+    {
+      "id": "H01",
+      "group": "H. Robustness",
+      "desc": "Transcript longer than the model's 514-position window keeps finding names",
+      "status": 200,
+      "elapsed": 2.9921923330111895,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "Klient: Tere, olen [PII].\nNõustaja selgitas kliendile maksuarvestuse korda ja tähtaegu ning viitas juhenditele. Nõustaja selgitas kliendile maksuarvestuse korda ja tähtaegu ning viitas juhenditele. Nõustaja selgitas kliendile maksuarvestuse korda ja tähtaegu ning viitas juhenditele. Nõustaja selgitas kliendile maksuarvestuse korda ja tähtaegu ning viitas juhenditele. Nõustaja selgitas kliendile maksuarvestuse korda ja tähtaegu ning viitas juhenditele. Nõustaja selgitas kliendile maksuarvestuse korda ja tähtaegu ning viitas juhenditele. Nõustaja selgitas kliendile maksuarvestuse korda ja tähtae"
+    },
+    {
+      "id": "H02",
+      "group": "H. Robustness",
+      "desc": "Denylist match overlapped by an NER span still gets its own operator",
+      "status": 200,
+      "elapsed": 0.17761442399933003,
+      "passed": false,
+      "failures": [
+        "expected to REMOVE 'Phoenixis' but it survived"
+      ],
+      "notes": [],
+      "output": "Projektis Phoenixis osales ka Sotsiaalkindlustusamet."
+    },
+    {
+      "id": "H04",
+      "group": "H. Robustness",
+      "desc": "Names must not be split at subword boundaries (aggregation_strategy)",
+      "status": 200,
+      "elapsed": 0.13514203400700353,
+      "passed": false,
+      "failures": [
+        "expected to REMOVE 'Kross' but it survived",
+        "expected to REMOVE 'Niiles' but it survived"
+      ],
+      "notes": [],
+      "output": "[PII] esitasid [PII], [PII] ja [PII]rik-Niiles Kross."
+    },
+    {
+      "id": "H03",
+      "group": "H. Robustness",
+      "desc": "Over-length text degrades to spaCy/regex instead of erroring",
+      "status": 200,
+      "elapsed": 2.31154875701759,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "[PII] selgitas menetluse korda. Klient esitas taotluse ja lisas dokumendid. [PII] selgitas menetluse korda. Klient esitas taotluse ja lisas dokumendid. [PII] selgitas menetluse korda. Klient esitas taotluse ja lisas dokumendid. [PII] selgitas menetluse korda. Klient esitas taotluse ja lisas dokumendid. [PII] selgitas menetluse korda. Klient esitas taotluse ja lisas dokumendid. [PII] selgitas menetluse korda. Klient esitas taotluse ja lisas dokumendid. [PII] selgitas menetluse korda. Klient esitas taotluse ja lisas dokumendid. [PII] selgitas menetluse korda. Klient esitas taotluse ja lisas doku"
+    },
+    {
+      "id": "G01",
+      "group": "G. API contract",
+      "desc": "Missing 'texts' field is rejected",
+      "status": 400,
+      "elapsed": 0.003101842012256384,
+      "passed": true,
+      "failures": [],
+      "notes": [
+        "rejected as expected: {\"errors\": {\"texts\": \"'texts' is a required property\"}, \"message\": \"Input payload validation failed\"}"
+      ],
+      "output": "{\"errors\": {\"texts\": \"'texts' is a required property\"}, \"message\": \"Input payload validation failed\"}"
+    },
+    {
+      "id": "G02",
+      "group": "G. API contract",
+      "desc": "'texts' as a string instead of an array is rejected",
+      "status": 400,
+      "elapsed": 0.002117349999025464,
+      "passed": true,
+      "failures": [],
+      "notes": [
+        "rejected as expected: {\"errors\": {\"texts\": \"'Jaan Tamm' is not of type 'array'\"}, \"message\": \"Input payload validation failed\"}"
+      ],
+      "output": "{\"errors\": {\"texts\": \"'Jaan Tamm' is not of type 'array'\"}, \"message\": \"Input payload validation failed\"}"
+    },
+    {
+      "id": "G03",
+      "group": "G. API contract",
+      "desc": "Empty 'texts' array is rejected",
+      "status": 500,
+      "elapsed": 0.04258737398777157,
+      "passed": false,
+      "failures": [
+        "expected HTTP 400, got 500: {'message': 'Anonymization failed: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand.'}"
+      ],
+      "notes": [],
+      "output": "{\"message\": \"Anonymization failed: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand.\"}"
+    },
+    {
+      "id": "G04",
+      "group": "G. API contract",
+      "desc": "Language not registered in the loaded config",
+      "status": 500,
+      "elapsed": 0.003756591002456844,
+      "passed": true,
+      "failures": [],
+      "notes": [
+        "rejected as expected: {\"message\": \"Anonymization failed: No matching recognizers were found to serve the request.\"}"
+      ],
+      "output": "{\"message\": \"Anonymization failed: No matching recognizers were found to serve the request.\"}"
+    },
+    {
+      "id": "G05",
+      "group": "G. API contract",
+      "desc": "Batch of three texts (incl. empty string) keeps order and arity",
+      "status": 200,
+      "elapsed": 0.14727514699916355,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "[X] helistas [X]sse.\n\n[X] saatis kirja aadressile [X]."
+    },
+    {
+      "id": "G06",
+      "group": "G. API contract",
+      "desc": "Long multi-turn chat transcript stays consistent",
+      "status": 200,
+      "elapsed": 0.39598476799437776,
+      "passed": true,
+      "failures": [],
+      "notes": [],
+      "output": "Klient: Tere, olen [PII], isikukood [PII].\nNõustaja: Tere! Kuidas saan aidata?\nKlient: [PII] teada oma maksuvõla suurust [PII].\nNõustaja: Teie võlg on 1250,50 eurot, viitenumber 2900123456.\nKlient: [PII] ma saan maksta kontole [PII]?\nNõustaja: Jah. [PII] saadetakse aadressile [PII].\nKlient: Aitäh! Minu telefon on [PII]."
+    }
+  ],
+  "metrics": {
+    "totals": {
+      "tp_exact": 65,
+      "tp_overlap": 7,
+      "fn": 14,
+      "fp": 20,
+      "traps": 1
+    },
+    "strict": {
+      "precision": 0.7065217391304348,
+      "recall": 0.8227848101265823,
+      "f1": 0.7602339181286549
+    },
+    "relaxed": {
+      "precision": 0.782608695652174,
+      "recall": 0.8372093023255814,
+      "f1": 0.8089887640449438
+    },
+    "per_entity": {
+      "CAR_NUMBER": {
+        "tp_exact": 1,
+        "tp_overlap": 0,
+        "fn": 2,
+        "fp": 1,
+        "precision": 0.5,
+        "recall": 0.3333333333333333,
+        "f1": 0.4
+      },
+      "CREDIT_CARD": {
+        "tp_exact": 1,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "CRYPTO": {
+        "tp_exact": 1,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "DATE_TIME": {
+        "tp_exact": 8,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "EE_PERSONAL_CODE": {
+        "tp_exact": 5,
+        "tp_overlap": 0,
+        "fn": 1,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 0.8333333333333334,
+        "f1": 0.9090909090909091
+      },
+      "EMAIL_ADDRESS": {
+        "tp_exact": 3,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "EST_ID_DOC": {
+        "tp_exact": 3,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "GPE/LOCATION": {
+        "tp_exact": 5,
+        "tp_overlap": 2,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "IBAN_CODE": {
+        "tp_exact": 3,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "IP_ADDRESS": {
+        "tp_exact": 0,
+        "tp_overlap": 0,
+        "fn": 3,
+        "fp": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "LOCATION": {
+        "tp_exact": 0,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 2,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "ORGANIZATION": {
+        "tp_exact": 12,
+        "tp_overlap": 5,
+        "fn": 8,
+        "fp": 6,
+        "precision": 0.7391304347826086,
+        "recall": 0.68,
+        "f1": 0.7083333333333334
+      },
+      "PERSON": {
+        "tp_exact": 16,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 10,
+        "precision": 0.6153846153846154,
+        "recall": 1.0,
+        "f1": 0.761904761904762
+      },
+      "PHONE_NUMBER": {
+        "tp_exact": 6,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 1,
+        "precision": 0.8571428571428571,
+        "recall": 1.0,
+        "f1": 0.923076923076923
+      },
+      "URL": {
+        "tp_exact": 1,
+        "tp_overlap": 0,
+        "fn": 0,
+        "fp": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    }
+  },
+  "latency": {
+    "plain": {
+      "min": 0.1192872239917051,
+      "median": 0.22771870900760405,
+      "max": 0.2599887709948234
+    },
+    "allowlist_3": {
+      "min": 0.14466280999477021,
+      "median": 0.14734776699333452,
+      "max": 0.2555938120058272
+    },
+    "denylist_3": {
+      "min": 0.11440009099896997,
+      "median": 0.14097662598942406,
+      "max": 0.2503352649800945
+    },
+    "both_10": {
+      "min": 0.12583011298556812,
+      "median": 0.18919859299785458,
+      "max": 0.20304276898968965
+    },
+    "batch_10": {
+      "min": 1.2567543670011219,
+      "median": 1.3306436180137098,
+      "max": 1.4213520900229923
+    }
+  }
+}

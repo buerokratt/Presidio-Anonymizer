@@ -21,6 +21,14 @@ class EstBERTRecognizerONNX(EntityRecognizer):
 
     ENTITIES = ["PERSON", "ORGANIZATION", "LOCATION", "DATE_TIME", "GPE"]
 
+    # XLM-RoBERTa has 514 position embeddings. Feeding it more makes the ONNX
+    # session throw, which previously wiped out every model detection for the
+    # whole request, so longer text is analysed in overlapping windows and the
+    # spans are mapped back onto the original offsets. The overlap gives an
+    # entity that lands on a window edge a second chance in the next window.
+    WINDOW_TOKENS = 400
+    WINDOW_OVERLAP_TOKENS = 50
+
     def __init__(
         self, model_name: str = "tartuNLP/EstBERT_NER", supported_language: str = "xx"
     ) -> None:
@@ -103,6 +111,60 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         """Load method - required by Presidio"""
         pass
 
+    def _char_windows(self, text: str) -> List[tuple[int, str]]:
+        """Whitespace-aligned fallback split, used when offsets are unavailable."""
+        budget = self.WINDOW_TOKENS * 3  # conservative chars-per-token estimate
+        if len(text) <= budget:
+            return [(0, text)]
+
+        windows = []
+        start = 0
+        while start < len(text):
+            end = min(start + budget, len(text))
+            if end < len(text):
+                split = text.rfind(" ", start, end)
+                if split > start:
+                    end = split
+            windows.append((start, text[start:end]))
+            start = end
+        return windows
+
+    def _windows(self, text: str) -> List[tuple[int, str]]:
+        """Split text into model-sized windows as (char offset, window text)."""
+        try:
+            encoded = self.tokenizer(
+                text, add_special_tokens=False, return_offsets_mapping=True
+            )
+            offsets = [
+                (start, end) for start, end in encoded["offset_mapping"] if end > start
+            ]
+        except Exception as e:
+            logger.warning(f"Token offsets unavailable, splitting on whitespace: {e}")
+            return self._char_windows(text)
+
+        if not offsets:
+            return [(0, text)]
+        if len(offsets) <= self.WINDOW_TOKENS:
+            return [(0, text)]
+
+        step = self.WINDOW_TOKENS - self.WINDOW_OVERLAP_TOKENS
+        windows = []
+        for first in range(0, len(offsets), step):
+            window = offsets[first : first + self.WINDOW_TOKENS]
+            if not window:
+                break
+            char_start = min(start for start, _ in window)
+            char_end = max(end for _, end in window)
+            windows.append((char_start, text[char_start:char_end]))
+            if first + self.WINDOW_TOKENS >= len(offsets):
+                break
+
+        logger.info(
+            f"Text of {len(text)} chars / {len(offsets)} tokens analysed "
+            f"in {len(windows)} windows"
+        )
+        return windows
+
     def analyze(
         self, text: str, entities: List[str], nlp_artifacts: NlpArtifacts | None = None
     ) -> List[RecognizerResult]:
@@ -114,10 +176,26 @@ class EstBERTRecognizerONNX(EntityRecognizer):
 
         try:
             # ONNX inference - releases GIL, allows true parallel execution
-            ner_results = self.nlp_pipeline(text)
-            if not isinstance(ner_results, list):
-                logger.warning(f"Unexpected NER output format: {ner_results}")
-                return results
+            ner_results = []
+            seen: set[tuple[str, int, int]] = set()
+            for offset, window in self._windows(text):
+                window_results = self.nlp_pipeline(window)
+                if not isinstance(window_results, list):
+                    logger.warning(f"Unexpected NER output format: {window_results}")
+                    continue
+                for entity in window_results:
+                    entity["start"] += offset
+                    entity["end"] += offset
+                    # Overlapping windows can report the same span twice.
+                    key = (
+                        str(entity.get("entity_group", entity.get("entity", ""))),
+                        entity["start"],
+                        entity["end"],
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    ner_results.append(entity)
 
             for entity in ner_results:
                 entity_type = (
