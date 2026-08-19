@@ -22,8 +22,8 @@ verified against the rebuilt container before the next is started.
 |---|---|---|---|
 | 1 | Long input loses all transformer detections | Leak | ✅ fixed |
 | 2 | Names split at subword boundaries | Leak | ✅ fixed |
-| 3 | `IP_ADDRESS` never anonymised | Leak | ⏳ in progress |
-| 4 | Denylist discarded on span overlap | Leak | ⬜ not started |
+| 3 | `IP_ADDRESS` never anonymised | Leak | ✅ fixed |
+| 4 | Denylist discarded on span overlap | Leak | ⏳ in progress |
 | 5 | Case-form synthesis is a no-op | Leak | ✅ fixed |
 | 6 | All `PERSON` false positives come from spaCy | Precision | ⬜ not started |
 | 7 | Global 0.83 threshold cuts agency names | Recall | ⬜ not started |
@@ -173,6 +173,39 @@ Switching also lifts borderline organisations: `Transpordiamet` 0.71 under
 - **Case**: `H04`
 
 ### 3. `IP_ADDRESS` is never anonymised — LEAK
+
+> **✅ FIXED** — both config files gained an `IpAddress` pattern recognizer at
+> 0.9 (0.85 in the stanza config, matching its lower scores), so `IP_ADDRESS` is
+> reachable at the configured threshold instead of relying on a 0.6 built-in.
+>
+> Two details worth keeping:
+>
+> - The IPv6 alternatives are ordered **longest-first**. Python's `re` returns the
+>   first alternative that matches, and the built-in ordering clipped
+>   `2001:db8::1` down to `2001:db8::`, leaving the final group in clear text.
+> - The patterns are single-quoted YAML so the backslashes stay literal, and use
+>   `\b` boundaries rather than the hand-rolled lookarounds used elsewhere in the
+>   file — an earlier draft with those lookarounds matched `14:30` and `23:59` as
+>   IPv6 addresses, which would have turned every clock time into an IP.
+>
+> Verified against Estonian text that could collide — clock times, scores,
+> money sums, version numbers, dates — with no false positives:
+>
+> ```
+> in   Riigi Infosüsteemi Amet: serveri IP on 192.168.10.24 ja IPv6 2001:db8::1.
+> out  [ORGANISATSIOON]: serveri IP on [IP-AADRESS] ja IPv6 [IP-AADRESS].
+>
+> in   Otsus tehti 12.03.2026, istung toimub 20 aprillil 2026 kell 09:15.
+> out  [ISIK] tehti [KUUPÄEV], istung toimub [KUUPÄEV] kell [KUUPÄEV].
+> ```
+>
+> `IP_ADDRESS` F1 0.00 → **1.00** (3/3). Strict F1 0.825 → **0.844**,
+> recall 0.849 → **0.884**, missed spans 13 → 10. `DATE_TIME` still 1.00.
+>
+> Still open, as the original finding recommended: the rest of
+> `entities_to_detect` has not been audited entity-by-entity against the 0.83
+> cut. `IP_ADDRESS` was the one that showed up in this suite; there may be others
+> reachable only through a sub-threshold built-in.
 
 It is in `entities_to_detect`, but its only source is Presidio's built-in
 `IpRecognizer`, scoring **0.6** against a **0.83** threshold. Unlike the email,

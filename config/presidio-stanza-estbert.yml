@@ -122,7 +122,20 @@ recognizers:
       - name: time_pattern
         regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))([01]?[0-9]|2[0-3]):[0-5][0-9](?=[.|,|;|:|\\s|!|?]|$)"
         score: 0.80
-  
+
+  # Presidio's built-in IpRecognizer scores 0.6, below default_score_threshold,
+  # and has no validator to promote a match - so IP_ADDRESS was listed in
+  # entities_to_detect but could never be reported.
+  - name: IpAddress
+    supported_language: et
+    supported_entity: IP_ADDRESS
+    patterns:
+      - name: ipv4_pattern
+        regex: '\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}\b'
+        score: 0.85
+      - name: ipv6_pattern
+        regex: '\b(?:([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:)'
+        score: 0.85
 
 
 # Anonymization configuration
