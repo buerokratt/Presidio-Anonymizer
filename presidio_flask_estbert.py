@@ -498,8 +498,16 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
     )
     logger.info(" AnalyzerEngine created")
 
-    # Remove unwanted recognizers
-    unwanted_recognizers = ["MedicalLicenseRecognizer"]
+    # Remove unwanted recognizers.
+    #
+    # SpacyRecognizer wraps xx_ent_wiki_sm, the multilingual model that backs the
+    # NlpEngine. Running the two NER sources separately traced every PERSON false
+    # positive in the audit to it - sentence-initial verbs such as Soovin and
+    # Palun, common nouns such as Otsus and Kaebuse, and worse, agencies labelled
+    # as people: Töötukassas, Vabariigi Valitsus, Tallinna Linnavalitsusele. The
+    # Estonian model labels all of those correctly. spaCy stays as the NlpEngine
+    # for tokenisation and lemmas; it just no longer contributes entities.
+    unwanted_recognizers = ["MedicalLicenseRecognizer", "SpacyRecognizer"]
     for recognizer_name in unwanted_recognizers:
         try:
             analyzer.registry.remove_recognizer(recognizer_name)

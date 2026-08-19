@@ -25,10 +25,10 @@ verified against the rebuilt container before the next is started.
 | 3 | `IP_ADDRESS` never anonymised | Leak | ✅ fixed |
 | 4 | Denylist discarded on span overlap | Leak | ✅ fixed |
 | 5 | Case-form synthesis is a no-op | Leak | ✅ fixed |
-| 6 | All `PERSON` false positives come from spaCy | Precision | ⏳ in progress |
+| 6 | All `PERSON` false positives come from spaCy | Precision | ✅ fixed |
 | 7 | Global 0.83 threshold cuts agency names | Recall | ⬜ not started |
 | 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
-| 9 | Car-plate regex matches money | Precision | ⬜ not started |
+| 9 | Car-plate regex matches money | Precision | ⏳ in progress |
 | 10 | `hash_type` accepted and ignored | Contract | ⬜ not started |
 | 11 | In-handler validation returns 500 | Contract | ⬜ not started |
 
@@ -334,6 +334,31 @@ promises the opposite. The allowlist *mechanism* is fine — the exact-form case
 - **Cases**: `E01`, `E02`, `E04`, `E05`
 
 ### 6. Every `PERSON` false positive comes from spaCy, not the Estonian model
+
+> **✅ FIXED** — `SpacyRecognizer` joined `MedicalLicenseRecognizer` in
+> `unwanted_recognizers`, so it is dropped from the registry in
+> `load_presidio_from_config()`. spaCy remains the `NlpEngine` for tokenisation
+> and lemmas; it just no longer contributes entities. `GET /recognizers` confirms
+> it is gone.
+>
+> This was the largest single improvement in the whole set:
+>
+> | | before | after |
+> |---|---|---|
+> | Strict P / R / F1 | 0.809 / 0.884 / 0.844 | **0.907 / 0.907 / 0.907** |
+> | False positives | 18 | **8** |
+> | `PERSON` P / R / F1 | 0.615 / 1.00 / 0.762 | **1.00 / 1.00 / 1.00** |
+> | `ORGANIZATION` F1 | 0.735 | 0.784 |
+> | Missed spans | 10 | 8 |
+>
+> Every one of the ten `PERSON` false positives is gone, and the spurious
+> `LOCATION` hits disappeared with them. `ORGANIZATION` recall rose too
+> (0.72 → 0.80), because spaCy was previously claiming agencies as people and
+> winning the overlap.
+>
+> Ordering mattered: doing this before finding 1 would have made things worse,
+> since spaCy was the only thing still finding names once the transformer blanked
+> on long input.
 
 All 10 `PERSON` false positives trace to `xx_ent_wiki_sm`:
 
