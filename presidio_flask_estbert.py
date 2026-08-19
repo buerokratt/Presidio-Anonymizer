@@ -38,6 +38,9 @@ class EstBERTRecognizerONNX(EntityRecognizer):
     WINDOW_TOKENS = 400
     WINDOW_OVERLAP_TOKENS = 50
 
+    # An Estonian registration plate, which the CAR_NUMBER recognizer owns.
+    PLATE_SHAPE = re.compile(r"[0-9]{2,3}\s?[A-ZÕÄÖÜ]{3}")
+
     def __init__(
         self, model_name: str = "tartuNLP/EstBERT_NER", supported_language: str = "xx"
     ) -> None:
@@ -202,8 +205,14 @@ class EstBERTRecognizerONNX(EntityRecognizer):
 
             if piece_end <= piece_start:
                 continue
+            piece = text[piece_start:piece_end]
             # An e-mail or URL is never a person or an organisation name.
-            if "@" in text[piece_start:piece_end]:
+            if "@" in piece:
+                continue
+            # Nor is a registration plate. The model labels one ORGANIZATION at
+            # up to 1.00, which outranks any score the CAR_NUMBER pattern can
+            # claim, so ownership has to be settled here rather than by score.
+            if self.PLATE_SHAPE.fullmatch(piece):
                 continue
             spans.append((piece_start, piece_end))
         return spans

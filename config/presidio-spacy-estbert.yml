@@ -102,20 +102,29 @@ recognizers:
         regex: "(?:^|(?<=[.|,|;|:|\\s|!|?|\\(]))(AA|AB|AC|EA|EB|EC|N|NA|N|UA|PB|PC|BD|BE|FB|FC|FD|FE|KD|KE|KF|VD|VE|VF|MD|ME|MF|SD|SE|SF|RD|RE|RF|CD|CF)[0-9]{7}(?=[.|,|;|:|\\s|!|?|\\)]|$)"
         score: 0.90
 
+  # An Estonian plate is 2-3 digits and 3 uppercase letters. The previous
+  # pattern accepted any letter case, which made it match currency amounts and
+  # units: "500 EUR" was anonymised as a registration number. Uppercase-only
+  # plus an exclusion list for the codes and units that share the shape.
   - name: EstonianCarNumber
     supported_language: xx
     supported_entity: CAR_NUMBER
     patterns:
       - name: car_number_pattern
-        regex: "(?:^|(?<=[±|.|,|;|:|\\s|!|?|\\W|\\(|\\)])|\\()([0-9]{2,3}\\s{0,1}[a-zA-Z]{3}?)(?=[.|,|;|:|\\s|!|?|\\(|\\)]|$)"
+        regex: '(?:^|(?<=[\s(,;:]))([0-9]{2,3}\s?(?!EUR|USD|EEK|GBP|SEK|NOK|DKK|PLN|CHF|JPY)[A-ZÕÄÖÜ]{3})(?=[.,;:\s!?)]|$)'
         score: 0.9
 
-  - name: EstonianPhoneNumbers 
+  # The country-code group used to be satisfied by digits inside a longer
+  # number, so "49403136515" matched as +49 followed by a local number and an
+  # isikukood was reported as PHONE_NUMBER. A country code now has to be
+  # followed by a separator, and the local part is capped at the 7-8 digits
+  # Estonian numbers actually have, so an 11-digit personal code cannot fit.
+  - name: EstonianPhoneNumbers
     supported_language: xx
     supported_entity: PHONE_NUMBER
     patterns:
       - name: phone_number_pattern
-        regex: "(?:^|(?<=[±|.|,|;|:|\\s|!|?|\\W|\\(|\\)])|\\()((\\+?\\s?359|\\+?\\s?372|\\+?\\s?79|\\+?\\s?49|\\+?\\s?46|\\+?\\s?358|\\+?\\s?44|\\+?\\s?52)\\s|\\+?\\s?372|\\+?\\s?79|\\+?\\s?49|\\+?\\s?358|\\+?\\s?44|\\+?\\s?52|\\+?\\s?46)?[5|6|7|4|8|1|0][0-9\\s-]{4,13}[0-9](?=[.|,|;|:|\\s|!|?|\\(|\\)]|$)"
+        regex: '(?:^|(?<=[\s(,;:]))(?:\+?\s?(?:372|358|359|44|46|49|52|79)[\s)\-]\s?)?(?<![0-9])[45678][0-9\s\-]{5,8}[0-9](?![0-9])(?!\s?[0-9]{4})(?=[.,;:\s!?)]|$)'
         score: 0.9
   
   - name: IBANCode

@@ -28,8 +28,8 @@ verified against the rebuilt container before the next is started.
 | 6 | All `PERSON` false positives come from spaCy | Precision | ✅ fixed |
 | 7 | Global 0.83 threshold cuts agency names | Recall | ✅ fixed |
 | 8 | Case endings survive outside the placeholder | Output | ✅ fixed (via 2) |
-| 9 | Car-plate regex matches money | Precision | ⏳ in progress |
-| 10 | `hash_type` accepted and ignored | Contract | ⬜ not started |
+| 9 | Car-plate regex matches money | Precision | ✅ fixed |
+| 10 | `hash_type` accepted and ignored | Contract | ⏳ in progress |
 | 11 | In-handler validation returns 500 | Contract | ⬜ not started |
 
 ## Headline
@@ -454,6 +454,44 @@ out  [ISIK] elab [GPE], kolis sinna [GPE]st ja töötas varem [GPE]s
   or lemma-align using the EstNLTK analysis already in the dependency set.
 
 ### 9. Car-plate regex matches money; plates get labelled as organisations
+
+> **✅ FIXED** — three changes, because this finding was three problems wearing
+> one hat.
+>
+> **The plate pattern.** Now uppercase-only (Estonian plates are) with an
+> exclusion list for currency codes, so `500 EUR`, `999 USD`, `250 kg` and
+> `500 eur` no longer match. `45 XYZ`, `123 ABC` and `123ABC` still do.
+>
+> **The phone pattern.** Its country-code group could be satisfied by digits
+> *inside* a longer number: in `49403136515` it read `49` as the country code and
+> reported an isikukood as `PHONE_NUMBER`. A country code now has to be followed
+> by a separator, and the local part is capped at the 7–8 digits Estonian numbers
+> actually have, so an 11-digit personal code cannot fit. All four phone formats
+> in `C02` still match, and a credit card no longer yields a partial phone match.
+>
+> **Plate ownership.** Raising the pattern's score did not settle the conflict —
+> the model labels a plate `ORGANIZATION` at up to **1.00**, which nothing can
+> outbid. Settled in `_normalize_span()` instead, the same way e-mail addresses
+> are: a span shaped like a plate is left to the `CAR_NUMBER` recognizer. The
+> pattern score stayed at 0.9.
+>
+> ```
+> before  sõiduk [ORGANISATSIOON] sai trahvi summas [AUTONUMBER], teine sõiduk [AUTONUMBER]
+> after   sõiduk [AUTONUMBER] sai trahvi summas 500 EUR, teine sõiduk [AUTONUMBER]
+> ```
+>
+> | | before | after |
+> |---|---|---|
+> | Strict P / R / F1 | 0.933 / 0.944 / 0.939 | **0.966 / 0.977 / 0.972** |
+> | `CAR_NUMBER` P / R / F1 | 0.500 / 0.333 / 0.400 | **1.00 / 1.00 / 1.00** |
+> | `EE_PERSONAL_CODE` recall | 0.833 | **1.00** |
+> | `PHONE_NUMBER` precision | 0.857 | **1.00** |
+> | False positives | 6 | **2** |
+> | Planted traps fired | 1 | **0** |
+>
+> Cosmetic residue: `(+372) 55512345` matches as `+372) 55512345`, so the
+> anonymised text keeps an unbalanced `(`. Over-capture of punctuation, not a
+> leak.
 
 `[0-9]{2,3}\s?[a-zA-Z]{3}` is also the shape of a currency amount. Meanwhile the
 model claims real plates as `ORGANIZATION` and wins the overlap. Worst entity in
