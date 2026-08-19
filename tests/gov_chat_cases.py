@@ -294,6 +294,7 @@ DETECTION_CASES: list[dict] = [
             "+372 5555 5555, vajadusel 372 5551234 ja (+372) 55512345."
         ),
         "gold": [
+            ("Maksu- ja Tolliameti", ORG),
             ("8800811", {"PHONE_NUMBER"}),
             ("+372 5555 5555", {"PHONE_NUMBER"}),
             ("372 5551234", {"PHONE_NUMBER"}),
@@ -338,6 +339,7 @@ DETECTION_CASES: list[dict] = [
             "elamisluba PB7654321 on kehtetud."
         ),
         "gold": [
+            ("Politsei- ja Piirivalveamet", ORG),
             ("AA1234567", {"EST_ID_DOC"}),
             ("PB7654321", {"EST_ID_DOC"}),
         ],

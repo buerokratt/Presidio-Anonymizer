@@ -1,0 +1,286 @@
+target      : http://localhost:8000
+model       : buerokrattRIA/xlm-roberta-NER-syntheticGov
+nlp engine  : spacy
+languages   : ['xx']
+threshold   : 0.83
+
+==============================================================================
+DETECTION CASES (gold-span scoring via the `keep` operator)
+==============================================================================
+
+OK [A01] Tax board: name + personal code + agency
+    gold 3/3  |  95 ms
+      = 'Jaan Tamm' -> PERSON
+      = '38001085718' -> EE_PERSONAL_CODE
+      = 'Maksu- ja Tolliametile' -> ORGANIZATION
+
+OK [A02] Unemployment fund: name, phone, email
+    gold 4/4  |  127 ms
+      = 'Mari Mets' -> PERSON
+      = 'Töötukassas' -> ORGANIZATION
+      = '+372 5555 5555' -> PHONE_NUMBER
+      = 'mari.mets@gmail.com' -> EMAIL_ADDRESS
+
+-- [A03] Social insurance board: pension payment to IBAN
+    gold 3/4  |  154 ms
+      x 'Sotsiaalkindlustusamet' expected ORGANIZATION: MISSED
+      = 'Kalle Kase' -> PERSON
+      = 'EE382200221020145685' -> IBAN_CODE
+      = '01.09.2026' -> DATE_TIME
+
+OK [A04] Police and border guard: ID document number
+    gold 4/4  |  119 ms
+      = 'Politsei- ja Piirivalveamet' -> ORGANIZATION
+      = 'Peeter Kuusele' -> PERSON
+      = 'AA1234567' -> EST_ID_DOC
+      = '12.03.2031' -> DATE_TIME
+
+-- [A05] Transport administration: car registration number
+    gold 1/3  |  104 ms
+      x 'Transpordiamet' expected ORGANIZATION: MISSED
+      x '123 ABC' expected CAR_NUMBER: mislabelled as ORGANIZATION
+      = 'Tiit Saarele' -> PERSON
+      + FP '123 ABC' as ORGANIZATION
+
+OK [A06] Health insurance fund: patient with personal code
+    gold 3/3  |  108 ms
+      = 'Tervisekassa' -> ORGANIZATION
+      = 'Liis Oja' -> PERSON
+      = '49403136515' -> EE_PERSONAL_CODE
+
+OK [A07] City government: street address change
+    gold 5/5  |  120 ms
+      = 'Tallinna Linnavalitsusele' -> ORGANIZATION
+      = 'Anne Lepik' -> PERSON
+      = 'Liivalaia 2' -> LOCATION
+      = 'Narva maantee 15' -> LOCATION
+      = 'Tallinn' -> GPE
+
+OK [A08] State information system authority: email, URL, IP
+    gold 4/4  |  168 ms
+      = 'Riigi Infosüsteemi Amet' -> ORGANIZATION
+      = 'toomas.raud@ria.ee' -> EMAIL_ADDRESS
+      = '192.168.10.24' -> IP_ADDRESS
+      = 'www.eesti.ee' -> URL
+
+-- [A09] Rescue board: caller, phone, address, clock time
+    gold 4/5  |  124 ms
+      x 'Päästeamet' expected ORGANIZATION: MISSED
+      = '14:30' -> DATE_TIME
+      = 'Katrin Ilvese' -> PERSON
+      = '5551234' -> PHONE_NUMBER
+      = 'Pärnu mnt 42' -> LOCATION
+
+-- [A10] Parliament: petition signed on a spelled-out date
+    gold 3/4  |  157 ms
+      x 'Riigikogu' expected ORGANIZATION: MISSED
+      = 'Urmas Vaher' -> PERSON
+      = '15 märts 2026' -> DATE_TIME
+      = 'urmas@petitsioon.ee' -> EMAIL_ADDRESS
+
+OK [B01] Person name inflected (allative, genitive) across a dialogue
+    gold 2/2  |  111 ms
+      = 'Jaan Tammele' -> PERSON
+      = 'Jaan Tamme' -> PERSON
+
+OK [B02] Agency names in illative and ablative case
+    gold 3/3  |  104 ms
+      = 'Maksu- ja Tolliametisse' -> ORGANIZATION
+      = 'Töötukassalt' -> ORGANIZATION
+      = 'Sotsiaalkindlustusametile' -> ORGANIZATION
+
+OK [B03] City names in inessive/elative case
+    gold 5/5  |  117 ms
+      = 'Kadri Sepp' -> PERSON
+      = 'Tallinnas' -> GPE
+      = 'Tartust' -> GPE
+      = 'Narvas' -> GPE
+      = 'Politsei- ja Piirivalveametis' -> ORGANIZATION
+
+OK [B04] Names with Estonian diacritics and foreign letters
+    gold 4/4  |  104 ms
+      = 'Kärt Õunapuu' -> PERSON
+      = 'Jüri Müür' -> PERSON
+      = 'Keskkonnaametile' -> ORGANIZATION
+      = 'Žanna Šišova' -> PERSON
+
+OK [B05] Hyphenated given name and double surname
+    gold 3/3  |  110 ms
+      = 'Mari-Liis Kask-Tamm' -> PERSON
+      = 'Justiitsministeeriumi' -> ORGANIZATION
+      = '47001010001' -> EE_PERSONAL_CODE
+
+-- [C01] Several valid personal codes in one message
+    gold 2/3  |  169 ms
+      = '38001085718' -> EE_PERSONAL_CODE
+      x '49403136515' expected EE_PERSONAL_CODE: mislabelled as PHONE_NUMBER
+      = '61203074321' -> EE_PERSONAL_CODE
+      + FP ' 49403136515' as PHONE_NUMBER
+
+OK [C02] Four phone number formats
+    gold 5/5  |  120 ms
+      = 'Maksu- ja Tolliameti' -> ORGANIZATION
+      = '8800811' -> PHONE_NUMBER
+      = '+372 5555 5555' -> PHONE_NUMBER
+      = '372 5551234' -> PHONE_NUMBER
+      = '55512345' -> PHONE_NUMBER
+
+-- [C03] Estonian and foreign IBAN
+    gold 2/2  |  120 ms
+      = 'EE382200221020145685' -> IBAN_CODE
+      = 'LT121000011101001000' -> IBAN_CODE
+      + FP 'Riigilõiv' as ORGANIZATION
+
+-- [C04] Car number vs. a money amount with the same shape
+    gold 1/2  |  178 ms
+      x '123 ABC' expected CAR_NUMBER: mislabelled as ORGANIZATION
+      = '45 XYZ' -> CAR_NUMBER
+      + FP '500 EUR' as CAR_NUMBER
+      + FP '123 ABC' as ORGANIZATION
+      ! TRAP '500 EUR' flagged as CAR_NUMBER
+
+OK [C05] Estonian document number prefixes
+    gold 3/3  |  107 ms
+      = 'Politsei- ja Piirivalveamet' -> ORGANIZATION
+      = 'AA1234567' -> EST_ID_DOC
+      = 'PB7654321' -> EST_ID_DOC
+
+OK [C06] Numeric, spelled-out and inflected dates plus a time
+    gold 4/4  |  112 ms
+      = '12.03.2026' -> DATE_TIME
+      = '15 märts 2026' -> DATE_TIME
+      = '20 aprillil 2026' -> DATE_TIME
+      = '09:15' -> DATE_TIME
+
+OK [C07] Credit card and crypto address
+    gold 2/2  |  447 ms
+      = '4111 1111 1111 1111' -> CREDIT_CARD
+      = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2' -> CRYPTO
+
+OK [D01] Purely institutional text, no personal data at all
+    gold 1/1  |  130 ms
+      = 'Maksu- ja Tolliamet' -> ORGANIZATION
+
+OK [D02] Money sums and a payment reference number
+    gold 0/0  |  283 ms
+
+-- [D03] Statute and gazette references
+    gold 1/1  |  221 ms
+      = 'Maksu- ja Tolliametil' -> ORGANIZATION
+      + FP 'I' as ORGANIZATION
+
+OK [D04] Institution names that are not people
+    gold 3/3  |  174 ms
+      = 'Vabariigi Valitsus' -> ORGANIZATION
+      = 'Riigikogu' -> ORGANIZATION
+      = 'Statistikaamet' -> ORGANIZATION
+
+OK [D05] Court case number and room number
+    gold 1/1  |  140 ms
+      = 'Justiitsministeeriumile' -> ORGANIZATION
+
+-- [D06] Agency name as the first word of a short sentence
+    gold 1/2  |  93 ms
+      x 'Päästeamet' expected ORGANIZATION: MISSED
+      = 'Transpordiamet' -> ORGANIZATION
+
+OK [D07] IPv4 with an explicit context word (threshold reachability)
+    gold 3/3  |  153 ms
+      = 'Riigi Infosüsteemi Amet' -> ORGANIZATION
+      = '192.168.10.24' -> IP_ADDRESS
+      = '2001:db8::1' -> IP_ADDRESS
+
+==============================================================================
+BEHAVIOUR / CONTRACT CASES
+==============================================================================
+
+PASS [E01] Allowlisted agency name survives anonymisation
+
+PASS [E02] Allowlist base form must cover an inflected mention (Vabamorf synthesis)
+
+PASS [E03] Denylisted codename in base form is forced to PII
+
+PASS [E04] Denylist base form must cover an inflected mention
+
+PASS [E05] Allowlist and denylist together in one request
+
+PASS [E06] Allowlist entry matching the surface form exactly (mechanism check)
+
+PASS [E07] Denylist entry matching the surface form exactly (mechanism check)
+
+PASS [F01] DEFAULT replace applies to every entity type
+
+PASS [F02] mask operator with masking_char and chars_to_mask
+
+PASS [F03] redact removes the span entirely
+
+FAIL [F04] hash with explicit hash_type (md5) - is the parameter forwarded?
+      note: declared hash_type=md5 IGNORED, output used sha256
+      -> hash_type=md5 silently dropped (output is sha256)
+      output: 'Isikukood c6a32cd2f902affa46a9468d8ed1d4a2f4bce44d8b49be3c1608e325437ae867 on registreeritud.'
+
+PASS [F05] encrypt on one entity, keep on another
+
+PASS [F06] No anonymizers - YAML default_operators supply Estonian placeholders
+
+PASS [F07] entities filter restricts detection to PERSON only
+
+PASS [H01] Transcript longer than the model's 514-position window keeps finding names
+
+PASS [H02] Denylist match overlapped by an NER span still gets its own operator
+
+PASS [H04] Names must not be split at subword boundaries (aggregation_strategy)
+
+PASS [H03] Text of ~2700 chars is windowed, not dropped
+
+PASS [G01] Missing 'texts' field is rejected
+      note: rejected as expected: {"errors": {"texts": "'texts' is a required property"}, "message": "Input payload validation failed"}
+
+PASS [G02] 'texts' as a string instead of an array is rejected
+      note: rejected as expected: {"errors": {"texts": "'Jaan Tamm' is not of type 'array'"}, "message": "Input payload validation failed"}
+
+FAIL [G03] Empty 'texts' array is rejected
+      -> expected HTTP 400, got 500: {'message': 'Anonymization failed: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand.'}
+      output: '{"message": "Anonymization failed: 400 Bad Request: The browser (or proxy) sent a request that this server could not understand."}'
+
+PASS [G04] Language not registered in the loaded config
+      note: rejected as expected: {"message": "Anonymization failed: No matching recognizers were found to serve the request."}
+
+PASS [G05] Batch of three texts (incl. empty string) keeps order and arity
+
+PASS [G06] Long multi-turn chat transcript stays consistent
+
+==============================================================================
+METRICS
+==============================================================================
+
+gold spans: 88  exact 80  partial 0  missed 8  false positives 6  trap hits 1
+strict   P=0.930  R=0.909  F1=0.920
+relaxed  P=0.930  R=0.909  F1=0.920
+
+entity                       exact  part  miss   FP      P      R     F1
+CAR_NUMBER                       1     0     2    1  0.500  0.333  0.400
+CREDIT_CARD                      1     0     0    0  1.000  1.000  1.000
+CRYPTO                           1     0     0    0  1.000  1.000  1.000
+DATE_TIME                        8     0     0    0  1.000  1.000  1.000
+EE_PERSONAL_CODE                 5     0     1    0  1.000  0.833  0.909
+EMAIL_ADDRESS                    3     0     0    0  1.000  1.000  1.000
+EST_ID_DOC                       3     0     0    0  1.000  1.000  1.000
+GPE/LOCATION                     7     0     0    0  1.000  1.000  1.000
+IBAN_CODE                        3     0     0    0  1.000  1.000  1.000
+IP_ADDRESS                       3     0     0    0  1.000  1.000  1.000
+ORGANIZATION                    22     0     5    4  0.846  0.815  0.830
+PERSON                          16     0     0    0  1.000  1.000  1.000
+PHONE_NUMBER                     6     0     0    1  0.857  1.000  0.923
+URL                              1     0     0    0  1.000  1.000  1.000
+
+behaviour cases: 22/24 passed
+
+LATENCY (3 runs each, seconds)
+  plain          min=0.109 median=0.118 max=0.146
+  allowlist_3    min=0.128 median=0.143 max=0.163
+  denylist_3     min=0.128 median=0.158 max=0.217
+  both_10        min=0.206 median=0.287 max=0.290
+  batch_10       min=1.236 median=1.308 max=1.380
+
+raw results -> results.json
