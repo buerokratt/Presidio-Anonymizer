@@ -4,9 +4,10 @@ Run 2026-08-19 against a freshly built container at `localhost:8000`, build `048
 (branch `model-update`), config `config/presidio-spacy-estbert.yml`
 (model `buerokrattRIA/xlm-roberta-NER-syntheticGov`, language `xx`, threshold 0.83).
 
-Suite: `tests/gov_chat_cases.py` + `tests/test_gov_chats.py`, 53 cases
-(29 gold-annotated detection cases, 24 behaviour/contract cases) over Estonian
-conversations about state agencies. Raw output: `tests/results.json`.
+Suite: `tests/gov_chat_cases.py` + `tests/test_gov_chats.py`, 55 cases
+(31 gold-annotated detection cases, 24 behaviour/contract cases) over Estonian
+conversations about state agencies. Raw output: `tests/results.json`. The audit
+itself ran 53 cases; `C08` and `C09` were added by the post-fix review below.
 
 ```bash
 docker compose up --build -d
