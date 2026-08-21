@@ -182,6 +182,32 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         )
         return windows
 
+    def _runs_without_addresses(
+        self, text: str, start: int, end: int
+    ) -> List[tuple[int, int]]:
+        """Split a span into runs of words, excluding any that hold an address.
+
+        Only the offending word is dropped, never the whole span: a span
+        covering "Jaan Tamm jaan@eesti.ee" has to keep protecting the name.
+        """
+        runs: List[tuple[int, int]] = []
+        run_start: Optional[int] = None
+        run_end = start
+
+        for token in re.finditer(r"\S+", text[start:end]):
+            if "@" in token.group(0):
+                if run_start is not None:
+                    runs.append((run_start, run_end))
+                    run_start = None
+                continue
+            if run_start is None:
+                run_start = start + token.start()
+            run_end = start + token.end()
+
+        if run_start is not None:
+            runs.append((run_start, run_end))
+        return runs
+
     def _normalize_span(self, text: str, start: int, end: int) -> List[tuple[int, int]]:
         """Tidy one model span into zero or more spans worth reporting.
 
@@ -190,31 +216,31 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         e-mail address as a person, because the local part often is a first
         name - and that span then outranks the e-mail recognizer's, replacing a
         [E-POST] placeholder with [ISIK]. So each span is split on separators,
-        stripped back to alphanumeric edges, and handed to the dedicated
-        recognizers when it looks like an address rather than a name.
+        addresses are carved out word by word, and what is left is stripped back
+        to alphanumeric edges.
         """
         spans = []
         for chunk in re.finditer(r"[^,;]+", text[start:end]):
-            piece_start = start + chunk.start()
-            piece_end = start + chunk.end()
+            chunk_start = start + chunk.start()
+            chunk_end = start + chunk.end()
 
-            while piece_start < piece_end and not text[piece_start].isalnum():
-                piece_start += 1
-            while piece_end > piece_start and not text[piece_end - 1].isalnum():
-                piece_end -= 1
+            for piece_start, piece_end in self._runs_without_addresses(
+                text, chunk_start, chunk_end
+            ):
+                while piece_start < piece_end and not text[piece_start].isalnum():
+                    piece_start += 1
+                while piece_end > piece_start and not text[piece_end - 1].isalnum():
+                    piece_end -= 1
 
-            if piece_end <= piece_start:
-                continue
-            piece = text[piece_start:piece_end]
-            # An e-mail or URL is never a person or an organisation name.
-            if "@" in piece:
-                continue
-            # Nor is a registration plate. The model labels one ORGANIZATION at
-            # up to 1.00, which outranks any score the CAR_NUMBER pattern can
-            # claim, so ownership has to be settled here rather than by score.
-            if self.PLATE_SHAPE.fullmatch(piece):
-                continue
-            spans.append((piece_start, piece_end))
+                if piece_end <= piece_start:
+                    continue
+                # A registration plate is not an organisation name. The model
+                # labels one ORGANIZATION at up to 1.00, which outranks any score
+                # the CAR_NUMBER pattern can claim, so ownership has to be
+                # settled here rather than by score.
+                if self.PLATE_SHAPE.fullmatch(text[piece_start:piece_end]):
+                    continue
+                spans.append((piece_start, piece_end))
         return spans
 
     def analyze(

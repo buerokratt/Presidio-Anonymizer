@@ -116,15 +116,22 @@ recognizers:
 
   # The country-code group used to be satisfied by digits inside a longer
   # number, so "49403136515" matched as +49 followed by a local number and an
-  # isikukood was reported as PHONE_NUMBER. A country code now has to be
-  # followed by a separator, and the local part is capped at the 7-8 digits
-  # Estonian numbers actually have, so an 11-digit personal code cannot fit.
+  # isikukood was reported as PHONE_NUMBER. Three explicit forms instead:
+  #
+  #   +372…/00372…  an explicit prefix, so the separator after the country code
+  #                 is optional - a personal code never carries one
+  #   372 …         a bare country code, which does need a separator, otherwise
+  #                 the leading digits of an isikukood read as one
+  #   5551234       no country code, and then it must not sit mid-number
+  #
+  # The local part is capped at the 7-8 digits Estonian numbers actually have,
+  # so an 11-digit personal code cannot fit under any of the three.
   - name: EstonianPhoneNumbers
     supported_language: xx
     supported_entity: PHONE_NUMBER
     patterns:
       - name: phone_number_pattern
-        regex: '(?:^|(?<=[\s(,;:]))(?:\+?\s?(?:372|358|359|44|46|49|52|79)[\s)\-]\s?)?(?<![0-9])[45678][0-9\s\-]{5,8}[0-9](?![0-9])(?!\s?[0-9]{4})(?=[.,;:\s!?)]|$)'
+        regex: '(?:^|(?<=[\s(,;:]))(?:(?:\+|00)\s?(?:372|358|359|44|46|49|52|79)[\s)\-]?\s?|(?:372|358|359|44|46|49|52|79)[\s)\-]\s?|(?<![0-9]))[45678][0-9\s\-]{5,8}[0-9](?![0-9])(?!\s?[0-9]{4})(?=[.,;:\s!?)]|$)'
         score: 0.9
   
   - name: IBANCode

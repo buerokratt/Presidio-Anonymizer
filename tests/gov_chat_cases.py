@@ -304,6 +304,41 @@ DETECTION_CASES: list[dict] = [
         "traps": [],
     },
     {
+        "id": "C08",
+        "group": "C. Pattern recognizers",
+        # Regression guard. Narrowing the phone pattern to stop it swallowing
+        # isikukoodid initially broke the two international forms that carry no
+        # separator after the country code.
+        "desc": "International phone forms with and without a separator",
+        "text": (
+            "Helistage +3725551234, 003725551234, +372 5551234 või 372-5551234, "
+            "vajadusel 6996996."
+        ),
+        "gold": [
+            ("+3725551234", {"PHONE_NUMBER"}),
+            ("003725551234", {"PHONE_NUMBER"}),
+            ("+372 5551234", {"PHONE_NUMBER"}),
+            ("372-5551234", {"PHONE_NUMBER"}),
+            ("6996996", {"PHONE_NUMBER"}),
+        ],
+        "traps": [],
+    },
+    {
+        "id": "C09",
+        "group": "C. Pattern recognizers",
+        # Regression guard. _normalize_span used to discard any model span
+        # containing "@", which lost the name when the model spanned both.
+        "desc": "A name directly beside an e-mail address",
+        "text": "Kontakt Jaan Tamm jaan.tamm@eesti.ee ja Mari Mets mari@eesti.ee.",
+        "gold": [
+            ("Jaan Tamm", PER),
+            ("jaan.tamm@eesti.ee", {"EMAIL_ADDRESS"}),
+            ("Mari Mets", PER),
+            ("mari@eesti.ee", {"EMAIL_ADDRESS"}),
+        ],
+        "traps": [],
+    },
+    {
         "id": "C03",
         "group": "C. Pattern recognizers",
         "desc": "Estonian and foreign IBAN",

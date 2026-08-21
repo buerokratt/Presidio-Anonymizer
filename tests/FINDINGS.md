@@ -32,13 +32,70 @@ verified against the rebuilt container before the next was started.
 | 10 | `hash_type` accepted and ignored | Contract | ✅ fixed | `c8df0a2` |
 | 11 | In-handler validation returns 500 | Contract | ✅ fixed | `82d295b` |
 
+## Post-fix review
+
+The suite passing 24/24 only proves the fixes did not break what the suite
+tests. A deliberate hunt for defects *introduced* by the fixes found two real
+ones, both now fixed and covered by regression cases.
+
+**A. `_normalize_span` discarded any span containing `@`** — so if the model ever
+produced one span covering a name and an e-mail, the name was lost entirely.
+The API happened not to trigger it, because the model split the two in every
+sentence tried; a direct unit test of the function did:
+
+```
+before   span over "Jaan Tamm jaan@eesti.ee"  ->  []          name LOST
+after    span over "Jaan Tamm jaan@eesti.ee"  ->  ['Jaan Tamm']
+```
+
+`_runs_without_addresses()` now carves out only the offending word. Case `C09`.
+
+**B. Narrowing the phone pattern broke two international forms.** Requiring a
+separator after the country code stopped an isikukood being read as `+49`
+followed by a local number, but it also rejected `+3725551234` and
+`003725551234` — both of which the *original* pattern matched. Verified against
+the original regex before calling it a regression. The pattern is now three
+explicit forms: an explicit `+`/`00` prefix makes the separator optional, a bare
+country code still requires one, and a bare local number must not sit
+mid-number. 12 of 12 formats detected, with all 16 negative cases still holding.
+Case `C08`.
+
+Also corrected: the plate and phone tightening had only been applied to the
+spacy config, while this document claimed both were kept in step. The stanza
+config now carries both patterns at its own scores.
+
+Checks that came back clean, listed so the next reviewer need not repeat them:
+
+- **Threshold vs. conflict resolution.** Lowering the engine threshold to 0.45
+  exposes low-score spans to Presidio's `remove_duplicates`, which runs *before*
+  the score filter. It only drops same-type containment and sorts by descending
+  score, so a weak span cannot suppress a strong one. Cross-type suppression
+  happens later in `AnonymizerEngine`, downstream of the per-entity filter, so a
+  sub-threshold span never reaches it. Probed with `ORGANIZATION: keep` plus
+  `PERSON: replace` over eight agency-and-name sentences: 0 of 8 names survived.
+- **Window seams.** A name walked across the ~400-token boundary in 12 steps was
+  found every time; the 50-token overlap covers it.
+- **`ORGANIZATION` at 0.45 costing precision.** 12 PII-free Estonian
+  administrative sentences produced 0 spurious detections.
+- **`apply_allowlist` trimming and `subtract_spans`** unit-tested across
+  edge/middle/whole-span overlap, empty terms, terms longer than the span, and
+  multiple blockers. All correct. An earlier apparent failure was a bad test
+  input — base forms instead of synthesized ones — not a code defect.
+- **URLs** are still typed `URL`, not absorbed into a model span.
+
+Known and accepted, not defects: an allowlisted term in the *middle* of a span
+is not split out; lowercase plate spellings such as `123 abc` no longer match,
+which is the deliberate cost of not matching `500 eur`; and `.lower()` could in
+principle change string length for exotic capitals such as `İ`, which would
+desync the allowlist trim offsets — not reachable from Estonian text.
+
 ## Headline
 
 | | audit | after fixes |
 |---|---|---|
-| Strict P / R / F1 | 0.707 / 0.823 / 0.760 | **0.966 / 0.977 / 0.972** |
+| Strict P / R / F1 | 0.707 / 0.823 / 0.760 | **0.969 / 0.979 / 0.974** |
 | Relaxed F1 | 0.809 | **0.978** |
-| Exact / partial / missed spans | 65 / 7 / 14 | **86 / 1 / 2** |
+| Exact / partial / missed spans | 65 / 7 / 14 | **95 / 1 / 2** |
 | False positives | 20 | **2** |
 | Planted traps fired | 1 of 8 | **0 of 8** |
 | Behaviour cases | 14/24 | **24/24** |
@@ -48,7 +105,7 @@ verified against the rebuilt container before the next was started.
 Twelve of the fourteen entity types now score 1.00 on precision, recall and F1.
 `ORGANIZATION` is at 0.929/0.929, and one `PHONE_NUMBER` span over-captures a
 closing parenthesis. Latency is unchanged; the gold set grew from 86 to 89 spans
-because three correct detections had been missing from the annotations.
+because three correct detections had been missing from the annotations, then to 98 with the two regression cases from the post-fix review.
 
 Everything below is the original audit, with a fix note at the top of each
 finding recording what changed and what it measured.
