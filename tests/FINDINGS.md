@@ -1,3 +1,5 @@
+-x
+
 # Detection audit — Estonian Presidio anonymizer
 
 Run 2026-08-19 against a freshly built container at `localhost:8000`, build `0486598`
@@ -19,19 +21,19 @@ uv run python tests/test_gov_chats.py --json tests/results.json
 All 11 findings are fixed on branch `audit-fixes`, one commit each, every one
 verified against the rebuilt container before the next was started.
 
-| # | Finding | Severity | Status | Commit |
-|---|---|---|---|---|
-| 1 | Long input loses all transformer detections | Leak | ✅ fixed | `c34e091` |
-| 2 | Names split at subword boundaries | Leak | ✅ fixed | `089b843` |
-| 3 | `IP_ADDRESS` never anonymised | Leak | ✅ fixed | `aa01471` |
-| 4 | Denylist discarded on span overlap | Leak | ✅ fixed | `b78e6a5` |
-| 5 | Case-form synthesis is a no-op | Leak | ✅ fixed | `6920bad` |
-| 6 | All `PERSON` false positives come from spaCy | Precision | ✅ fixed | `1fca81f` |
-| 7 | Global 0.83 threshold cuts agency names | Recall | ✅ fixed | `891f055` |
-| 8 | Case endings survive outside the placeholder | Output | ✅ fixed via 2 | `089b843` |
-| 9 | Car-plate regex matches money | Precision | ✅ fixed | `bdf8125` |
-| 10 | `hash_type` accepted and ignored | Contract | ✅ fixed | `c8df0a2` |
-| 11 | In-handler validation returns 500 | Contract | ✅ fixed | `82d295b` |
+| #  | Finding                                       | Severity  | Status         | Commit      |
+| -- | --------------------------------------------- | --------- | -------------- | ----------- |
+| 1  | Long input loses all transformer detections   | Leak      | ✅ fixed       | `c34e091` |
+| 2  | Names split at subword boundaries             | Leak      | ✅ fixed       | `089b843` |
+| 3  | `IP_ADDRESS` never anonymised               | Leak      | ✅ fixed       | `aa01471` |
+| 4  | Denylist discarded on span overlap            | Leak      | ✅ fixed       | `b78e6a5` |
+| 5  | Case-form synthesis is a no-op                | Leak      | ✅ fixed       | `6920bad` |
+| 6  | All`PERSON` false positives come from spaCy | Precision | ✅ fixed       | `1fca81f` |
+| 7  | Global 0.83 threshold cuts agency names       | Recall    | ✅ fixed       | `891f055` |
+| 8  | Case endings survive outside the placeholder  | Output    | ✅ fixed via 2 | `089b843` |
+| 9  | Car-plate regex matches money                 | Precision | ✅ fixed       | `bdf8125` |
+| 10 | `hash_type` accepted and ignored            | Contract  | ✅ fixed       | `c8df0a2` |
+| 11 | In-handler validation returns 500             | Contract  | ✅ fixed       | `82d295b` |
 
 ## Post-fix review
 
@@ -92,16 +94,16 @@ desync the allowlist trim offsets — not reachable from Estonian text.
 
 ## Headline
 
-| | audit | after fixes |
-|---|---|---|
-| Strict P / R / F1 | 0.707 / 0.823 / 0.760 | **0.969 / 0.979 / 0.974** |
-| Relaxed F1 | 0.809 | **0.978** |
-| Exact / partial / missed spans | 65 / 7 / 14 | **95 / 1 / 2** |
-| False positives | 20 | **2** |
-| Planted traps fired | 1 of 8 | **0 of 8** |
-| Behaviour cases | 14/24 | **24/24** |
-| Confirmed leak paths | 5 | **0** |
-| Latency, single short text | 135 ms median | 135 ms median |
+|                                | audit                 | after fixes                     |
+| ------------------------------ | --------------------- | ------------------------------- |
+| Strict P / R / F1              | 0.707 / 0.823 / 0.760 | **0.969 / 0.979 / 0.974** |
+| Relaxed F1                     | 0.809                 | **0.978**                 |
+| Exact / partial / missed spans | 65 / 7 / 14           | **95 / 1 / 2**            |
+| False positives                | 20                    | **2**                     |
+| Planted traps fired            | 1 of 8                | **0 of 8**                |
+| Behaviour cases                | 14/24                 | **24/24**                 |
+| Confirmed leak paths           | 5                     | **0**                     |
+| Latency, single short text     | 135 ms median         | 135 ms median                   |
 
 Twelve of the fourteen entity types now score 1.00 on precision, recall and F1.
 `ORGANIZATION` is at 0.929/0.929, and one `PHONE_NUMBER` span over-captures a
@@ -202,11 +204,11 @@ for a silently dropped tail.
 > `"first"` alone over-captures, so it needed a companion `_normalize_span()`
 > pass. Three regressions it introduced, and what the pass does about them:
 >
-> | `"first"` alone | after normalization |
-> |---|---|
+> | `"first"` alone                                                                | after normalization                       |
+> | -------------------------------------------------------------------------------- | ----------------------------------------- |
 > | `[PII] esitasid [PII] ja [PII]` — two names merged, comma and full stop eaten | `[PII] esitasid [PII], [PII] ja [PII].` |
-> | `e-post [ISIK]` — email claimed as PERSON, outranking the email recognizer | `e-post [E-POST]` |
-> | `Jaan Tamm,` — span includes the comma | `Jaan Tamm` |
+> | `e-post [ISIK]` — email claimed as PERSON, outranking the email recognizer    | `e-post [E-POST]`                       |
+> | `Jaan Tamm,` — span includes the comma                                        | `Jaan Tamm`                             |
 >
 > The pass splits each model span on `,;`, strips it back to alphanumeric edges,
 > and discards spans containing `@` so the dedicated recognizers keep ownership
@@ -215,14 +217,14 @@ for a silently dropped tail.
 > Verified: `[PII] esitasid [PII], [PII] ja [PII].` — every name anonymised, no
 > fragment left in clear text. Case `H04` passes.
 >
-> | | baseline | after |
-> |---|---|---|
-> | Strict P / R / F1 | 0.707 / 0.823 / 0.760 | **0.802 / 0.849 / 0.825** |
-> | Exact / partial spans | 65 / 7 | **73 / 0** |
-> | False positives | 20 | 18 |
-> | `ORGANIZATION` F1 | 0.708 | 0.735 |
-> | `PERSON` F1 | 0.762 | 0.780 |
-> | Behaviour cases | 14/24 | **16/24** |
+> |                       | baseline              | after                           |
+> | --------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1     | 0.707 / 0.823 / 0.760 | **0.802 / 0.849 / 0.825** |
+> | Exact / partial spans | 65 / 7                | **73 / 0**                |
+> | False positives       | 20                    | 18                              |
+> | `ORGANIZATION` F1   | 0.708                 | 0.735                           |
+> | `PERSON` F1         | 0.762                 | 0.780                           |
+> | Behaviour cases       | 14/24                 | **16/24**                 |
 >
 > Word-level aggregation also consumes the Estonian case ending, which is what
 > finding 8 was about — so that one is fixed here too, and strict now equals
@@ -426,13 +428,13 @@ promises the opposite. The allowlist *mechanism* is fine — the exact-form case
 >
 > This was the largest single improvement in the whole set:
 >
-> | | before | after |
-> |---|---|---|
-> | Strict P / R / F1 | 0.809 / 0.884 / 0.844 | **0.907 / 0.907 / 0.907** |
-> | False positives | 18 | **8** |
-> | `PERSON` P / R / F1 | 0.615 / 1.00 / 0.762 | **1.00 / 1.00 / 1.00** |
-> | `ORGANIZATION` F1 | 0.735 | 0.784 |
-> | Missed spans | 10 | 8 |
+> |                       | before                | after                           |
+> | --------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1     | 0.809 / 0.884 / 0.844 | **0.907 / 0.907 / 0.907** |
+> | False positives       | 18                    | **8**                     |
+> | `PERSON` P / R / F1 | 0.615 / 1.00 / 0.762  | **1.00 / 1.00 / 1.00**    |
+> | `ORGANIZATION` F1   | 0.735                 | 0.784                           |
+> | Missed spans          | 10                    | 8                               |
 >
 > Every one of the ten `PERSON` false positives is gone, and the spurious
 > `LOCATION` hits disappeared with them. `ORGANIZATION` recall rose too
@@ -478,12 +480,12 @@ branch on entity type see a person where the record names an institution.
 > populations do not overlap, so lowering the threshold buys recall without
 > admitting those errors.
 >
-> | | before | after |
-> |---|---|---|
-> | Strict P / R / F1 | 0.930 / 0.909 / 0.920 | **0.933 / 0.944 / 0.939** |
-> | `ORGANIZATION` exact | 20 | **26** |
+> |                             | before                | after                           |
+> | --------------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1           | 0.930 / 0.909 / 0.920 | **0.933 / 0.944 / 0.939** |
+> | `ORGANIZATION` exact      | 20                    | **26**                    |
 > | `ORGANIZATION` P / R / F1 | 0.769 / 0.800 / 0.784 | **0.867 / 0.929 / 0.897** |
-> | Missed spans | 8 | **5** |
+> | Missed spans                | 8                     | **5**                     |
 >
 > `Päästeamet` is still missed in both cases that use it, at any threshold: the
 > model does not predict it as an entity at all, so no amount of tuning recovers
@@ -563,14 +565,14 @@ out  [ISIK] elab [GPE], kolis sinna [GPE]st ja töötas varem [GPE]s
 > after   sõiduk [AUTONUMBER] sai trahvi summas 500 EUR, teine sõiduk [AUTONUMBER]
 > ```
 >
-> | | before | after |
-> |---|---|---|
-> | Strict P / R / F1 | 0.933 / 0.944 / 0.939 | **0.966 / 0.977 / 0.972** |
-> | `CAR_NUMBER` P / R / F1 | 0.500 / 0.333 / 0.400 | **1.00 / 1.00 / 1.00** |
-> | `EE_PERSONAL_CODE` recall | 0.833 | **1.00** |
-> | `PHONE_NUMBER` precision | 0.857 | **1.00** |
-> | False positives | 6 | **2** |
-> | Planted traps fired | 1 | **0** |
+> |                             | before                | after                           |
+> | --------------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1           | 0.933 / 0.944 / 0.939 | **0.966 / 0.977 / 0.972** |
+> | `CAR_NUMBER` P / R / F1   | 0.500 / 0.333 / 0.400 | **1.00 / 1.00 / 1.00**    |
+> | `EE_PERSONAL_CODE` recall | 0.833                 | **1.00**                  |
+> | `PHONE_NUMBER` precision  | 0.857                 | **1.00**                  |
+> | False positives             | 6                     | **2**                     |
+> | Planted traps fired         | 1                     | **0**                     |
 >
 > Cosmetic residue: `(+372) 55512345` matches as `+372) 55512345`, so the
 > anonymised text keeps an unbalanced `(`. Over-capture of punctuation, not a
@@ -679,33 +681,33 @@ POST /anonymize {"texts": []}  ->  HTTP 500
 
 F1 before the fixes → after. Every entity either improved or held at 1.00.
 
-| Entity | exact | partial | missed | FP | P | R | F1 | was |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| CAR_NUMBER | 3 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.40 |
-| CREDIT_CARD | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
-| CRYPTO | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
-| DATE_TIME | 8 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
-| EE_PERSONAL_CODE | 6 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.91 |
-| EMAIL_ADDRESS | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
-| EST_ID_DOC | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
-| IBAN_CODE | 3 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
-| IP_ADDRESS | 3 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.00 |
-| LOCATION / GPE | 7 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
-| ORGANIZATION | 26 | 0 | 2 | 2 | 0.93 | 0.93 | **0.93** | 0.71 |
-| PERSON | 16 | 0 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.76 |
-| PHONE_NUMBER | 5 | 1 | 0 | 0 | 1.00 | 1.00 | **1.00** | 0.92 |
-| URL | 1 | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| Entity           | exact | partial | missed | FP |    P |    R |             F1 |  was |
+| ---------------- | ----: | ------: | -----: | -: | ---: | ---: | -------------: | ---: |
+| CAR_NUMBER       |     3 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.40 |
+| CREDIT_CARD      |     1 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| CRYPTO           |     1 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| DATE_TIME        |     8 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| EE_PERSONAL_CODE |     6 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.91 |
+| EMAIL_ADDRESS    |     3 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| EST_ID_DOC       |     3 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| IBAN_CODE        |     3 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| IP_ADDRESS       |     3 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.00 |
+| LOCATION / GPE   |     7 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| ORGANIZATION     |    26 |       0 |      2 |  2 | 0.93 | 0.93 | **0.93** | 0.71 |
+| PERSON           |    16 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.76 |
+| PHONE_NUMBER     |     5 |       1 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.92 |
+| URL              |     1 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
 
 Baseline for comparison:
 
-| Entity | P | R | F1 |
-|---|---:|---:|---:|
-| PHONE_NUMBER | 0.86 | 1.00 | 0.92 |
+| Entity           |    P |    R |   F1 |
+| ---------------- | ---: | ---: | ---: |
+| PHONE_NUMBER     | 0.86 | 1.00 | 0.92 |
 | EE_PERSONAL_CODE | 1.00 | 0.83 | 0.91 |
-| PERSON | 0.62 | 1.00 | 0.76 |
-| ORGANIZATION | 0.74 | 0.68 | 0.71 |
-| CAR_NUMBER | 0.50 | 0.33 | 0.40 |
-| IP_ADDRESS | 0.00 | 0.00 | 0.00 |
+| PERSON           | 0.62 | 1.00 | 0.76 |
+| ORGANIZATION     | 0.74 | 0.68 | 0.71 |
+| CAR_NUMBER       | 0.50 | 0.33 | 0.40 |
+| IP_ADDRESS       | 0.00 | 0.00 | 0.00 |
 
 Latency after the fixes (3 runs each, median): plain 0.135 s, with allowlist
 0.116 s, with denylist 0.166 s, both + 10 words 0.209 s, batch of 10 texts
@@ -722,19 +724,19 @@ A batch of ten still costs ten times one text: `MAX_WORKERS` is set in
 
 The planned order held up, and sequencing turned out to matter in two places.
 
-| Step | Finding | Strict F1 after | Behaviour after |
-|---|---|---|---|
-| 1 | Chunk long input (1) | 0.760 | 15/24 |
-| 2 | Word-level aggregation + span normalization (2, 8) | 0.825 | 16/24 |
-| 3 | Vabamorf POS + allowlist trimming (5) | 0.825 | 19/24 |
-| 4 | Reachable `IP_ADDRESS` recognizer (3) | 0.844 | 19/24 |
-| 5 | Denylist wins overlap (4) | 0.844 | 22/24 |
-| 6 | Drop `SpacyRecognizer` (6) | 0.907 | 22/24 |
-| — | Gold-annotation corrections | 0.939 | 22/24 |
-| 7 | Per-entity thresholds (7) | 0.939 | 22/24 |
-| 8 | Plate and phone patterns (9) | 0.972 | 22/24 |
-| 9 | Forward `hash_type` (10) | 0.972 | 23/24 |
-| 10 | Correct status codes (11) | 0.972 | **24/24** |
+| Step | Finding                                            | Strict F1 after | Behaviour after |
+| ---- | -------------------------------------------------- | --------------- | --------------- |
+| 1    | Chunk long input (1)                               | 0.760           | 15/24           |
+| 2    | Word-level aggregation + span normalization (2, 8) | 0.825           | 16/24           |
+| 3    | Vabamorf POS + allowlist trimming (5)              | 0.825           | 19/24           |
+| 4    | Reachable`IP_ADDRESS` recognizer (3)             | 0.844           | 19/24           |
+| 5    | Denylist wins overlap (4)                          | 0.844           | 22/24           |
+| 6    | Drop`SpacyRecognizer` (6)                        | 0.907           | 22/24           |
+| —   | Gold-annotation corrections                        | 0.939           | 22/24           |
+| 7    | Per-entity thresholds (7)                          | 0.939           | 22/24           |
+| 8    | Plate and phone patterns (9)                       | 0.972           | 22/24           |
+| 9    | Forward`hash_type` (10)                          | 0.972           | 23/24           |
+| 10   | Correct status codes (11)                          | 0.972           | **24/24** |
 
 Two ordering dependencies were real:
 
