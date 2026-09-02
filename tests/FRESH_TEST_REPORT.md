@@ -33,15 +33,48 @@ uv run python tests/eval_conll.py test_fresh.conll --detok space   # sensitivity
 **micro F1 = 0.8774**, bootstrap 95 % CI over the 70 sentences
 = **[0.8330, 0.9167]**.
 
-Two things to hold in mind before reading that against the fine-tuning table:
+### What this model actually is
 
-1. **This model was never fine-tuned on the chat training set.** It is
-   `xlm-roberta-NER-syntheticGov` used as it ships. Every Run 1–11 number is a
-   model fine-tuned on the 341 chat examples.
-2. **It is not the same model as baseline Z2.** Z2 is
-   `buerokrattRIA/EstBert_NER_SyntheticGov` (EstBERT, 110 M). This is the
-   XLM-R sibling of that family, which does not appear anywhere in the previous
-   report.
+It is **not in the fine-tuning report at all** — not as a baseline and not as a
+run. Read from the deployed model's own config rather than from its name:
+
+| property | deployed model | Z2 / R2 in the report |
+|---|---|---|
+| name | `buerokrattRIA/xlm-roberta-NER-syntheticGov` | `buerokrattRIA/EstBert_NER_SyntheticGov` |
+| architecture | `XLMRobertaForTokenClassification` | EstBERT (BERT-base) |
+| size | 24 layers, 1024 hidden, **~560 M** (2.24 GB fp32) | 110 M |
+| vocab / max pos | 250 002 / 514 | 50 k / 512 |
+| head | clean **9-label** `O, B/I-PER, B/I-ORG, B/I-LOC, B/I-GPE` | inherited 23-label |
+
+So it shares only the publisher and the synthetic-government data lineage with
+Z2. Its real peers in the report are **R7** (`xlm-roberta-large`, 560 M, fresh
+9-label head) and **R10** (`51la5/roberta-large-NER`, XLM-R-large, 560 M) — same
+backbone, same capacity class, same label scheme. The only difference is the
+training data: synthetic government text instead of the 341 chat examples.
+
+That makes the comparison cleaner than "a zero-shot model did well":
+
+| | model | training | fresh F1 |
+|---|---|---|---|
+| — | xlm-roberta-NER-syntheticGov | synthetic-gov, **zero-shot on chat** | **0.8774** |
+| R10 | roberta-large-NER | multi-NER pretrain + chat | 0.8662 |
+| R7 | xlm-roberta-large | fresh head + chat | 0.8466 |
+
+Same backbone and size as R7, no chat training, **+3.1 F1** over it.
+
+**And it explains why zero-shot works here.** Its label space is already exactly
+the target four classes. Runs 3–7 each had to initialise a fresh 9-label head
+from scratch — visible in the report's own trajectories, where R3, R5 and R7 all
+sit at dev F1 = 0.000 after epoch 1. This model arrives with that head already
+trained, so there is no head surgery and no label-space mismatch to recover
+from.
+
+Two things still to hold in mind:
+
+1. **It was never fine-tuned on the chat training set**, while every Run 1–11
+   number was.
+2. **It is scored here through a pipeline, not bare** — see the attribution
+   section below, which matters more than the headline.
 
 ## Against the fine-tuning results
 
@@ -251,8 +284,14 @@ capitals gets meaningfully worse anonymisation than a polite one.
    of the sixteen misses are place names, and a pattern recognizer at 0.9 would
    catch them deterministically — the same fix that made `IP_ADDRESS` reachable
    in the audit.
-5. **Consider fine-tuning this model.** It reaches parity with the best
-   fine-tuned systems *zero-shot*. Z2's fine-tune gained +7.3 F1 on the original
-   test; if a comparable gain holds here, `xlm-roberta-NER-syntheticGov`
-   fine-tuned on the 341 chat examples is the most promising candidate not yet
-   in the experiment table.
+5. **Add this model to the experiment table as a zero-shot baseline.** It costs
+   nothing to run — no fine-tuning — and it belongs beside Z1 and Z2 on all three
+   test sets. At 0.8774 it is far above both existing zero-shot baselines, which
+   changes the "headroom to fine-tuning" analysis: the gap this family has left
+   to close is much smaller than Z2 suggested.
+6. **Then fine-tune it — it is the strongest untried candidate.** The report
+   picks R10 partly because a pretrained NER head beat a fresh one. This model
+   has both advantages at once: a 560 M backbone *and* a pretrained head already
+   in the right 4-class label space, and it starts at R10's finished level.
+   Z2's fine-tune gained +7.3 F1 on the original test; even a fraction of that
+   from here would clear every row in the table.
