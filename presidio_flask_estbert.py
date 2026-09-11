@@ -16,6 +16,27 @@ import re
 
 logger = logging.getLogger("presidio-flask-api")
 
+# Estonian abbreviations whose full stop does not end a sentence. Used when
+# deciding where a model span may be cut, so "Pärnu mnt. 12" stays one span.
+ABBREVIATIONS = frozenset(
+    {
+        "tn",  # tänav
+        "mnt",  # maantee
+        "pst",  # puiestee
+        "kt",  # kaubatänav
+        "nr",  # number
+        "lk",  # lehekülg
+        "vt",  # vaata
+        "jne",  # ja nii edasi
+        "jm",  # ja muud
+        "sh",  # sealhulgas
+        "nt",  # näiteks
+        "dr",  # doktor
+        "hr",  # härra
+        "pr",  # proua
+    }
+)
+
 # Per-entity score thresholds read from the config. AnalyzerEngine only supports
 # one threshold for everything, so the engine is built with the lowest threshold
 # in play and apply_score_thresholds() does the real per-entity filtering. The
@@ -182,6 +203,50 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         )
         return windows
 
+    def _sentence_chunks(
+        self, text: str, start: int, end: int
+    ) -> List[tuple[int, int]]:
+        """Cut a span at newlines and sentence ends.
+
+        Word-level aggregation can run a span straight through a full stop into
+        the next line, so in a transcript "…Tolliametis.\\nNõustaja: Teie võlg…"
+        came back as one ORGANIZATION and swallowed the speaker label.
+
+        A newline is always a boundary - no entity name contains one. A full
+        stop is only a boundary when whitespace follows, which keeps a domain
+        such as www.eesti.ee intact, and not when what precedes it is an initial
+        or a known abbreviation, which keeps "J. Tamm" and "Pärnu mnt. 12"
+        whole.
+        """
+        chunks = []
+        chunk_start = start
+
+        for match in re.finditer(r"\n+|(?<=[.!?])[ \t]+", text[start:end]):
+            boundary = start + match.start()
+            is_newline = "\n" in match.group(0)
+            # A newline is always a boundary; a full stop only when it really
+            # ends a clause rather than abbreviating the word before it.
+            if not is_newline and self._ends_in_abbreviation(
+                text[chunk_start:boundary]
+            ):
+                continue
+            chunks.append((chunk_start, boundary))
+            chunk_start = start + match.end()
+
+        chunks.append((chunk_start, end))
+        return [(a, b) for a, b in chunks if text[a:b].strip()]
+
+    @staticmethod
+    def _ends_in_abbreviation(text: str) -> bool:
+        """Whether a full stop here abbreviates a word rather than ends a clause."""
+        last_word = text.rstrip().rsplit(maxsplit=1)[-1] if text.strip() else ""
+        stem = last_word.rstrip(".!?")
+        if len(stem) <= 1:  # an initial: "J."
+            return True
+        if re.fullmatch(r"(?:[^\W\d_]\.)+", last_word):  # "A.S."
+            return True
+        return stem.lower() in ABBREVIATIONS
+
     def _runs_without_addresses(
         self, text: str, start: int, end: int
     ) -> List[tuple[int, int]]:
@@ -215,15 +280,18 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         runs two neighbouring names together across a comma. It also labels an
         e-mail address as a person, because the local part often is a first
         name - and that span then outranks the e-mail recognizer's, replacing a
-        [E-POST] placeholder with [ISIK]. So each span is split on separators,
-        addresses are carved out word by word, and what is left is stripped back
-        to alphanumeric edges.
+        [E-POST] placeholder with [ISIK]. So each span is cut at sentence and
+        line boundaries, then on commas and semicolons, addresses are carved out
+        word by word, and what is left is stripped back to alphanumeric edges.
         """
         spans = []
-        for chunk in re.finditer(r"[^,;]+", text[start:end]):
-            chunk_start = start + chunk.start()
-            chunk_end = start + chunk.end()
+        clauses = [
+            (sentence_start + clause.start(), sentence_start + clause.end())
+            for sentence_start, sentence_end in self._sentence_chunks(text, start, end)
+            for clause in re.finditer(r"[^,;]+", text[sentence_start:sentence_end])
+        ]
 
+        for chunk_start, chunk_end in clauses:
             for piece_start, piece_end in self._runs_without_addresses(
                 text, chunk_start, chunk_end
             ):

@@ -761,6 +761,42 @@ BEHAVIOUR_CASES: list[dict] = [
         "expect_removed": ["Kross", "Niiles", "Grigorjeva", "Kõrvits"],
     },
     {
+        "id": "H05",
+        "group": "H. Robustness",
+        "desc": "A span must not run across a sentence end into the next line",
+        "payload": {
+            "texts": [
+                "Klient: Soovin teada maksuvõla suurust Maksu- ja Tolliametis.\n"
+                "Nõustaja: Teie võlg on 1250,50 eurot."
+            ],
+            "anonymizers": {"DEFAULT": {"type": "replace", "new_value": "[PII]"}},
+        },
+        # Word-level aggregation used to run one span from the agency name
+        # straight through the full stop and newline into the next speaker's
+        # turn, so the transcript came back as "...suurust [PII]: Teie võlg..."
+        # with the sentence end and line break swallowed. Not a leak, but it
+        # destroys the structure of a transcript.
+        #
+        # The model labels that whole region ORGANIZATION, so splitting it
+        # propagates the label to both halves and "Nõustaja" is still redacted -
+        # it was inside the swallowed span before too. What has to survive is the
+        # structure: the full stop, the newline, and the following sentence.
+        "expect_removed": ["Maksu- ja Tolliametis"],
+        "expect_in_output": [".\n", "Teie võlg on 1250,50 eurot"],
+    },
+    {
+        "id": "H06",
+        "group": "H. Robustness",
+        "desc": "Abbreviations and initials are not mistaken for sentence ends",
+        "payload": {
+            "texts": ["Saada kiri aadressile Pärnu mnt. 12 hr. J. Tamme nimele."],
+            "anonymizers": {"DEFAULT": {"type": "keep"}},
+        },
+        # The sentence split must not fire on the full stop in "mnt.", "hr." or
+        # an initial, or an address and a name get cut into fragments.
+        "expect_kept": ["Pärnu mnt. 12", "J. Tamme"],
+    },
+    {
         "id": "H03",
         "group": "H. Robustness",
         "desc": "Text of ~2700 chars is windowed, not dropped",
