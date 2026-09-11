@@ -1,15 +1,14 @@
--x
-
 # Detection audit — Estonian Presidio anonymizer
 
 Run 2026-08-19 against a freshly built container at `localhost:8000`, build `0486598`
 (branch `model-update`), config `config/presidio-spacy-estbert.yml`
 (model `buerokrattRIA/xlm-roberta-NER-syntheticGov`, language `xx`, threshold 0.83).
 
-Suite: `tests/gov_chat_cases.py` + `tests/test_gov_chats.py`, 55 cases
-(31 gold-annotated detection cases, 24 behaviour/contract cases) over Estonian
+Suite: `tests/gov_chat_cases.py` + `tests/test_gov_chats.py`, 57 cases
+(31 gold-annotated detection cases, 26 behaviour/contract cases) over Estonian
 conversations about state agencies. Raw output: `tests/results.json`. The audit
-itself ran 53 cases; `C08` and `C09` were added by the post-fix review below.
+itself ran 53 cases; `C08` and `C09` were added by the post-fix review below,
+and `H05`/`H06` by the review follow-up.
 
 ```bash
 docker compose up --build -d
@@ -28,7 +27,7 @@ verified against the rebuilt container before the next was started.
 | 3  | `IP_ADDRESS` never anonymised               | Leak      | ✅ fixed       | `aa01471` |
 | 4  | Denylist discarded on span overlap            | Leak      | ✅ fixed       | `b78e6a5` |
 | 5  | Case-form synthesis is a no-op                | Leak      | ✅ fixed       | `6920bad` |
-| 6  | All`PERSON` false positives come from spaCy | Precision | ✅ fixed       | `1fca81f` |
+| 6  | All `PERSON` false positives come from spaCy | Precision | ✅ fixed       | `1fca81f` |
 | 7  | Global 0.83 threshold cuts agency names       | Recall    | ✅ fixed       | `891f055` |
 | 8  | Case endings survive outside the placeholder  | Output    | ✅ fixed via 2 | `089b843` |
 | 9  | Car-plate regex matches money                 | Precision | ✅ fixed       | `bdf8125` |
@@ -92,6 +91,25 @@ which is the deliberate cost of not matching `500 eur`; and `.lower()` could in
 principle change string length for exotic capitals such as `İ`, which would
 desync the allowlist trim offsets — not reachable from Estonian text.
 
+## Review follow-up
+
+Raised in review after the fixes above: `_normalize_span` split on `,` and `;`
+but not on sentence boundaries, so a span could run through a full stop and a
+newline into the next speaker's turn — in a transcript
+`...Tolliametis.\nNõustaja: Teie võlg...` came back as one `ORGANIZATION`,
+swallowing the line break and turn marker. Not a leak, but it destroys the
+structure of a transcript.
+
+`_sentence_chunks()` now cuts at newlines and at real sentence ends before the
+comma split. A newline always splits; a full stop only when whitespace follows
+(so `www.eesti.ee` stays intact) and not after an initial or a known Estonian
+abbreviation (so `J. Tamm` and `Pärnu mnt. 12` stay whole).
+
+Cases `H05` and `H06` lock both halves of that. Detection metrics unchanged at
+F1 0.974, and the fresh-test predictions are byte-identical — though that set
+contains no newlines, so it cannot exercise this path, which is why the two
+cases were added.
+
 ## Headline
 
 |                                | audit                 | after fixes                     |
@@ -101,7 +119,7 @@ desync the allowlist trim offsets — not reachable from Estonian text.
 | Exact / partial / missed spans | 65 / 7 / 14           | **95 / 1 / 2**            |
 | False positives                | 20                    | **2**                     |
 | Planted traps fired            | 1 of 8                | **0 of 8**                |
-| Behaviour cases                | 14/24                 | **24/24**                 |
+| Behaviour cases                | 14/24                 | **26/26**                 |
 | Confirmed leak paths           | 5                     | **0**                     |
 | Latency, single short text     | 135 ms median         | 135 ms median                   |
 
@@ -729,13 +747,13 @@ The planned order held up, and sequencing turned out to matter in two places.
 | 1    | Chunk long input (1)                               | 0.760           | 15/24           |
 | 2    | Word-level aggregation + span normalization (2, 8) | 0.825           | 16/24           |
 | 3    | Vabamorf POS + allowlist trimming (5)              | 0.825           | 19/24           |
-| 4    | Reachable`IP_ADDRESS` recognizer (3)             | 0.844           | 19/24           |
+| 4    | Reachable `IP_ADDRESS` recognizer (3)             | 0.844           | 19/24           |
 | 5    | Denylist wins overlap (4)                          | 0.844           | 22/24           |
-| 6    | Drop`SpacyRecognizer` (6)                        | 0.907           | 22/24           |
+| 6    | Drop `SpacyRecognizer` (6)                        | 0.907           | 22/24           |
 | —   | Gold-annotation corrections                        | 0.939           | 22/24           |
 | 7    | Per-entity thresholds (7)                          | 0.939           | 22/24           |
 | 8    | Plate and phone patterns (9)                       | 0.972           | 22/24           |
-| 9    | Forward`hash_type` (10)                          | 0.972           | 23/24           |
+| 9    | Forward `hash_type` (10)                          | 0.972           | 23/24           |
 | 10   | Correct status codes (11)                          | 0.972           | **24/24** |
 
 Two ordering dependencies were real:
