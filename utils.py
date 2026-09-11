@@ -27,25 +27,58 @@ def synthesize_word(word: str) -> list[str]:
     """
     Synthesize all case forms for a single Estonian word
 
+    Vabamorf needs the right part of speech. Allow- and denylists are full of
+    proper nouns - place names, company names, project codenames - and for a
+    capitalised word Vabamorf returns nothing under "S" (common noun), which
+    silently reduced this whole function to an identity. "H" is pärisnimi,
+    the proper-noun class; "S" is kept as a fallback for ordinary words and for
+    surnames, which "H" does not always cover.
+
     Args:
         word: Single word string
 
     Returns:
         List of all case forms (singular + plural)
     """
-    sing_rows = []
-    plur_rows = []
+    pos_tags = ("H", "S") if word[:1].isupper() else ("S", "H")
 
-    for case, _, _ in cases:
-        sing_rows.extend(synthesize(word, "sg " + case, "S"))
-        plur_rows.extend(synthesize(word, "pl " + case, "S"))
+    all_forms: list[str] = []
+    for pos in pos_tags:
+        for case, _, _ in cases:
+            all_forms.extend(synthesize(word, "sg " + case, pos))
+            all_forms.extend(synthesize(word, "pl " + case, pos))
+        # Matching is case-insensitive downstream, so a lowercase fallback form
+        # is still useful; only try the next tag if this one produced nothing.
+        if all_forms:
+            break
 
-    all_forms = sing_rows + plur_rows
     # Remove duplicates and empty strings
     all_forms = [form for form in set(all_forms) if form.strip()]
 
     logger.info(f"Synthesized {len(all_forms)} forms for word '{word}'")
     return all_forms
+
+
+def synthesize_phrase(phrase: str) -> list[str]:
+    """
+    Synthesize case forms for an allow/denylist entry of one or more words
+
+    Estonian inflects the head of such a phrase, which is its last word, so
+    "Maksu- ja Tolliamet" has to become "Maksu- ja Tolliametis",
+    "Maksu- ja Tolliametisse" and so on rather than being left untouched.
+
+    Args:
+        phrase: One allow/denylist entry, possibly several words
+
+    Returns:
+        List of inflected variants of the whole phrase
+    """
+    parts = phrase.split()
+    if len(parts) < 2:
+        return synthesize_word(phrase)
+
+    prefix = " ".join(parts[:-1])
+    return [f"{prefix} {form}" for form in synthesize_word(parts[-1])]
 
 
 def synthesize_all(words: list[str] | str) -> list[str]:
@@ -80,7 +113,7 @@ def synthesize_all(words: list[str] | str) -> list[str]:
 
         # Add all synthesized forms
         try:
-            synthesized = synthesize_word(word)
+            synthesized = synthesize_phrase(word)
             result.extend(synthesized)
         except Exception as e:
             logger.warning(f"Could not synthesize word '{word}': {e}")

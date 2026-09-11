@@ -19,7 +19,7 @@ nlp_configuration:
 
 # EstBERT NER Model Configuration
 estbert_configuration:
-  model_name: "tartuNLP/EstBERT_NER_v2"
+  model_name: "buerokrattRIA/xlm-roberta-NER-syntheticGov"
   supported_language: et
   entity_mapping:
     # Map EstBERT Estonian labels to Presidio entities
@@ -75,16 +75,20 @@ recognizers:
     supported_language: et
     supported_entity: CAR_NUMBER
     patterns:
+      # Uppercase-only with a currency exclusion list, so a money amount such as
+      # "500 EUR" is not read as a registration number. See the spacy config.
       - name: car_number_pattern
-        regex: "(?:^|(?<=[±|.|,|;|:|\\s|!|?|\\W)|(]))([0-9]{2,3}\\s{0,1}[a-zA-Z]{3}?)(?=[.|,|;|:|\\s|!|?]|$)"
+        regex: '(?:^|(?<=[\s(,;:]))([0-9]{2,3}\s?(?!EUR|USD|EEK|GBP|SEK|NOK|DKK|PLN|CHF|JPY)[A-ZÕÄÖÜ]{3})(?=[.,;:\s!?)]|$)'
         score: 0.85
 
   - name: EstonianPhoneNumbers 
     supported_language: et
     supported_entity: PHONE_NUMBER
     patterns:
+      # Three explicit forms so the leading digits of an isikukood cannot be read
+      # as a country code. See the spacy config for the reasoning.
       - name: phone_number_pattern
-        regex: "(?:^|(?<=[±|.|,|;|:|\\s|!|?|\\W)|(]))((\\+?\\s?359|\\+?\\s?372|\\+?\\s?79|\\+?\\s?49|\\+?\\s?46|\\+?\\s?358|\\+?\\s?44|\\+?\\s?52)\\s|\\+?\\s?372|\\+?\\s?79|\\+?\\s?49|\\+?\\s?358|\\+?\\s?44|\\+?\\s?52|\\+?\\s?46)?[5|6|7|4|8|1|0][0-9\\s-]{4,13}[0-9](?=[.|,|;|:|\\s|!|?|)|(]|$)"
+        regex: '(?:^|(?<=[\s(,;:]))(?:(?:\+|00)\s?(?:372|358|359|44|46|49|52|79)[\s)\-]?\s?|(?:372|358|359|44|46|49|52|79)[\s)\-]\s?|(?<![0-9]))[45678][0-9\s\-]{5,8}[0-9](?![0-9])(?!\s?[0-9]{4})(?=[.,;:\s!?)]|$)'
         score: 0.85
   
   - name: IBANCode
@@ -122,7 +126,20 @@ recognizers:
       - name: time_pattern
         regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))([01]?[0-9]|2[0-3]):[0-5][0-9](?=[.|,|;|:|\\s|!|?]|$)"
         score: 0.80
-  
+
+  # Presidio's built-in IpRecognizer scores 0.6, below default_score_threshold,
+  # and has no validator to promote a match - so IP_ADDRESS was listed in
+  # entities_to_detect but could never be reported.
+  - name: IpAddress
+    supported_language: et
+    supported_entity: IP_ADDRESS
+    patterns:
+      - name: ipv4_pattern
+        regex: '\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}\b'
+        score: 0.85
+      - name: ipv6_pattern
+        regex: '\b(?:([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:)'
+        score: 0.85
 
 
 # Anonymization configuration

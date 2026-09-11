@@ -82,6 +82,10 @@ fix = false
 select = ["E4", "E7", "E9", "F", "B", "T20", "N", "ANN", "ERA", "PERF"]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+# The API test harness is a CLI reporter; writing its report to stdout is the point.
+"tests/*" = ["T201"]
+
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []

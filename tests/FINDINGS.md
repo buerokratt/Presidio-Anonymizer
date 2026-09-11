@@ -1,0 +1,791 @@
+# Detection audit — Estonian Presidio anonymizer
+
+Run 2026-08-19 against a freshly built container at `localhost:8000`, build `0486598`
+(branch `model-update`), config `config/presidio-spacy-estbert.yml`
+(model `buerokrattRIA/xlm-roberta-NER-syntheticGov`, language `xx`, threshold 0.83).
+
+Suite: `tests/gov_chat_cases.py` + `tests/test_gov_chats.py`, 57 cases
+(31 gold-annotated detection cases, 26 behaviour/contract cases) over Estonian
+conversations about state agencies. Raw output: `tests/results.json`. The audit
+itself ran 53 cases; `C08` and `C09` were added by the post-fix review below,
+and `H05`/`H06` by the review follow-up.
+
+```bash
+docker compose up --build -d
+uv run python tests/test_gov_chats.py --json tests/results.json
+```
+
+## Fix status
+
+All 11 findings are fixed on branch `audit-fixes`, one commit each, every one
+verified against the rebuilt container before the next was started.
+
+| #  | Finding                                       | Severity  | Status         | Commit      |
+| -- | --------------------------------------------- | --------- | -------------- | ----------- |
+| 1  | Long input loses all transformer detections   | Leak      | ✅ fixed       | `c34e091` |
+| 2  | Names split at subword boundaries             | Leak      | ✅ fixed       | `089b843` |
+| 3  | `IP_ADDRESS` never anonymised               | Leak      | ✅ fixed       | `aa01471` |
+| 4  | Denylist discarded on span overlap            | Leak      | ✅ fixed       | `b78e6a5` |
+| 5  | Case-form synthesis is a no-op                | Leak      | ✅ fixed       | `6920bad` |
+| 6  | All `PERSON` false positives come from spaCy | Precision | ✅ fixed       | `1fca81f` |
+| 7  | Global 0.83 threshold cuts agency names       | Recall    | ✅ fixed       | `891f055` |
+| 8  | Case endings survive outside the placeholder  | Output    | ✅ fixed via 2 | `089b843` |
+| 9  | Car-plate regex matches money                 | Precision | ✅ fixed       | `bdf8125` |
+| 10 | `hash_type` accepted and ignored            | Contract  | ✅ fixed       | `c8df0a2` |
+| 11 | In-handler validation returns 500             | Contract  | ✅ fixed       | `82d295b` |
+
+## Post-fix review
+
+The suite passing 24/24 only proves the fixes did not break what the suite
+tests. A deliberate hunt for defects *introduced* by the fixes found two real
+ones, both now fixed and covered by regression cases.
+
+**A. `_normalize_span` discarded any span containing `@`** — so if the model ever
+produced one span covering a name and an e-mail, the name was lost entirely.
+The API happened not to trigger it, because the model split the two in every
+sentence tried; a direct unit test of the function did:
+
+```
+before   span over "Jaan Tamm jaan@eesti.ee"  ->  []          name LOST
+after    span over "Jaan Tamm jaan@eesti.ee"  ->  ['Jaan Tamm']
+```
+
+`_runs_without_addresses()` now carves out only the offending word. Case `C09`.
+
+**B. Narrowing the phone pattern broke two international forms.** Requiring a
+separator after the country code stopped an isikukood being read as `+49`
+followed by a local number, but it also rejected `+3725551234` and
+`003725551234` — both of which the *original* pattern matched. Verified against
+the original regex before calling it a regression. The pattern is now three
+explicit forms: an explicit `+`/`00` prefix makes the separator optional, a bare
+country code still requires one, and a bare local number must not sit
+mid-number. 12 of 12 formats detected, with all 16 negative cases still holding.
+Case `C08`.
+
+Also corrected: the plate and phone tightening had only been applied to the
+spacy config, while this document claimed both were kept in step. The stanza
+config now carries both patterns at its own scores.
+
+Checks that came back clean, listed so the next reviewer need not repeat them:
+
+- **Threshold vs. conflict resolution.** Lowering the engine threshold to 0.45
+  exposes low-score spans to Presidio's `remove_duplicates`, which runs *before*
+  the score filter. It only drops same-type containment and sorts by descending
+  score, so a weak span cannot suppress a strong one. Cross-type suppression
+  happens later in `AnonymizerEngine`, downstream of the per-entity filter, so a
+  sub-threshold span never reaches it. Probed with `ORGANIZATION: keep` plus
+  `PERSON: replace` over eight agency-and-name sentences: 0 of 8 names survived.
+- **Window seams.** A name walked across the ~400-token boundary in 12 steps was
+  found every time; the 50-token overlap covers it.
+- **`ORGANIZATION` at 0.45 costing precision.** 12 PII-free Estonian
+  administrative sentences produced 0 spurious detections.
+- **`apply_allowlist` trimming and `subtract_spans`** unit-tested across
+  edge/middle/whole-span overlap, empty terms, terms longer than the span, and
+  multiple blockers. All correct. An earlier apparent failure was a bad test
+  input — base forms instead of synthesized ones — not a code defect.
+- **URLs** are still typed `URL`, not absorbed into a model span.
+
+Known and accepted, not defects: an allowlisted term in the *middle* of a span
+is not split out; lowercase plate spellings such as `123 abc` no longer match,
+which is the deliberate cost of not matching `500 eur`; and `.lower()` could in
+principle change string length for exotic capitals such as `İ`, which would
+desync the allowlist trim offsets — not reachable from Estonian text.
+
+## Review follow-up
+
+Raised in review after the fixes above: `_normalize_span` split on `,` and `;`
+but not on sentence boundaries, so a span could run through a full stop and a
+newline into the next speaker's turn — in a transcript
+`...Tolliametis.\nNõustaja: Teie võlg...` came back as one `ORGANIZATION`,
+swallowing the line break and turn marker. Not a leak, but it destroys the
+structure of a transcript.
+
+`_sentence_chunks()` now cuts at newlines and at real sentence ends before the
+comma split. A newline always splits; a full stop only when whitespace follows
+(so `www.eesti.ee` stays intact) and not after an initial or a known Estonian
+abbreviation (so `J. Tamm` and `Pärnu mnt. 12` stay whole).
+
+Cases `H05` and `H06` lock both halves of that. Detection metrics unchanged at
+F1 0.974, and the fresh-test predictions are byte-identical — though that set
+contains no newlines, so it cannot exercise this path, which is why the two
+cases were added.
+
+## Headline
+
+|                                | audit                 | after fixes                     |
+| ------------------------------ | --------------------- | ------------------------------- |
+| Strict P / R / F1              | 0.707 / 0.823 / 0.760 | **0.969 / 0.979 / 0.974** |
+| Relaxed F1                     | 0.809                 | **0.978**                 |
+| Exact / partial / missed spans | 65 / 7 / 14           | **95 / 1 / 2**            |
+| False positives                | 20                    | **2**                     |
+| Planted traps fired            | 1 of 8                | **0 of 8**                |
+| Behaviour cases                | 14/24                 | **26/26**                 |
+| Confirmed leak paths           | 5                     | **0**                     |
+| Latency, single short text     | 135 ms median         | 135 ms median                   |
+
+Twelve of the fourteen entity types now score 1.00 on precision, recall and F1.
+`ORGANIZATION` is at 0.929/0.929, and one `PHONE_NUMBER` span over-captures a
+closing parenthesis. Latency is unchanged; the gold set grew from 86 to 89 spans
+because three correct detections had been missing from the annotations, then to 98 with the two regression cases from the post-fix review.
+
+Everything below is the original audit, with a fix note at the top of each
+finding recording what changed and what it measured.
+
+### What is still open
+
+- **`Päästeamet` is never detected** (2 misses). The model does not predict it as
+  an entity at any score, so no threshold recovers it. Needs an upstream model
+  fix or a pattern recognizer for agency names that matter operationally.
+- **Two high-confidence `ORGANIZATION` false positives**: `Riigilõiv`
+  ("state fee") and the `I` of the gazette citation `RT I`, both at ~0.98. Model
+  errors, not tuning ones.
+- **`(+372) 55512345` matches as `+372) 55512345`**, leaving an unbalanced `(` in
+  the output. Over-capture of punctuation, not a leak.
+- **The model exception is still swallowed.** It can no longer fire for input
+  length, but any other failure inside `analyze()` still returns an empty list
+  rather than surfacing.
+- **`entities_to_detect` has not been audited entity-by-entity** against the
+  score threshold. `IP_ADDRESS` was the dead entry this suite exposed; there may
+  be others reachable only through a sub-threshold built-in.
+- **No parallelism.** A batch of ten texts still costs ten times one text;
+  `MAX_WORKERS` in `docker-compose.yml` remains unused.
+
+## Method note
+
+Presidio reports anonymisation offsets against the *rewritten* text. To score
+detection, every detection case is sent with a single global `keep` operator:
+`keep` leaves the text byte-identical, so the returned `start`/`end`/`text`
+refer to the original string. Matching is greedy one-to-one, exact-span first
+then overlap, so partial hits stay visible as partial hits.
+
+Causes were confirmed by running the two NER sources in isolation inside the
+container, so each finding names a line rather than a symptom.
+
+## Findings
+
+### 1. Texts over ~512 tokens lose all transformer detections, silently — LEAK
+
+> **✅ FIXED** — `presidio_flask_estbert.py`. `analyze()` now splits input into
+> 400-token windows with 50 tokens of overlap, using the tokenizer's
+> `offset_mapping` to cut on real token boundaries, then shifts each window's
+> spans back onto the original offsets and drops duplicates from the overlap.
+> A whitespace-aligned fallback covers a non-fast tokenizer.
+>
+> Verified: names are now found at every length tested up to **38,267 chars**
+> (9,954 tokens, 29 windows) — previously nothing above ~1,900 chars. Zero
+> `Error in EstBERT ONNX analysis` in the log across the whole suite. Case `H01`
+> passes; detection metrics unchanged, so no regression on short text.
+>
+> ```
+> filler  chars   start_name  end_name  end_ik  end_iban  NER_ents
+> x0        167   True        True      True    True       2
+> x40      5247   True        True      True    True      42
+> x150    19217   True        True      True    True     152
+> x300    38267   True        True      True    True     302
+> ```
+>
+> Not done: the exception is still swallowed rather than surfaced. It can no
+> longer fire for length reasons, but any other model failure remains invisible
+> to the caller. Worth a follow-up.
+
+XLM-RoBERTa has 514 position embeddings. Longer input makes the ONNX session
+throw; the `except Exception` swallows it and `analyze()` returns `[]`. The
+request answers **HTTP 200** with no warning, and detection degrades to
+spaCy + regex for the *whole* document, not just the tail.
+
+```
+ERROR:presidio_flask_estbert.py:140: Error in EstBERT ONNX analysis:
+  [ONNXRuntimeError] : INVALID_ARGUMENT : Gather node
+  '/roberta/embeddings/position_embeddings/Gather'
+  indices element out of data bounds, idx=514 must be within [-514,513]
+```
+
+Boundary sweep: 1853 chars → 1 NER entity; 1915 chars → **0**, and nothing above.
+
+The tokenizer is built with `max_length=512` but the pipeline is never called
+with `truncation=True`, so nothing truncates (Transformers logs exactly that at
+startup). Truncation alone is not the fix — it trades a whole-document failure
+for a silently dropped tail.
+
+- **Cause**: `presidio_flask_estbert.py:75-82` (pipeline), error swallowed at `:139-140`
+- **Fix**: split into overlapping ≤512-token windows, offset-correct each window's
+  spans back to the original string, merge. Let the failure surface instead of
+  returning `[]` — a silent empty result is indistinguishable from clean text.
+- **Case**: `H01`
+
+### 2. Names split at subword boundaries; fragments fall below threshold — LEAK
+
+> **✅ FIXED** — `presidio_flask_estbert.py`. `aggregation_strategy` is now
+> `"first"`, which labels a whole word from its first subword instead of scoring
+> fragments separately.
+>
+> `"first"` alone over-captures, so it needed a companion `_normalize_span()`
+> pass. Three regressions it introduced, and what the pass does about them:
+>
+> | `"first"` alone                                                                | after normalization                       |
+> | -------------------------------------------------------------------------------- | ----------------------------------------- |
+> | `[PII] esitasid [PII] ja [PII]` — two names merged, comma and full stop eaten | `[PII] esitasid [PII], [PII] ja [PII].` |
+> | `e-post [ISIK]` — email claimed as PERSON, outranking the email recognizer    | `e-post [E-POST]`                       |
+> | `Jaan Tamm,` — span includes the comma                                        | `Jaan Tamm`                             |
+>
+> The pass splits each model span on `,;`, strips it back to alphanumeric edges,
+> and discards spans containing `@` so the dedicated recognizers keep ownership
+> of addresses.
+>
+> Verified: `[PII] esitasid [PII], [PII] ja [PII].` — every name anonymised, no
+> fragment left in clear text. Case `H04` passes.
+>
+> |                       | baseline              | after                           |
+> | --------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1     | 0.707 / 0.823 / 0.760 | **0.802 / 0.849 / 0.825** |
+> | Exact / partial spans | 65 / 7                | **73 / 0**                |
+> | False positives       | 20                    | 18                              |
+> | `ORGANIZATION` F1   | 0.708                 | 0.735                           |
+> | `PERSON` F1         | 0.762                 | 0.780                           |
+> | Behaviour cases       | 14/24                 | **16/24**                 |
+>
+> Word-level aggregation also consumes the Estonian case ending, which is what
+> finding 8 was about — so that one is fixed here too, and strict now equals
+> relaxed because there are no partial spans left.
+>
+> Known tradeoff: a genuine entity name containing a comma would be split into
+> two placeholders. Benign, and no Estonian agency name in the suite is affected.
+
+`aggregation_strategy="simple"` does not merge sentencepiece continuations for
+XLM-R. Fragments are scored separately, sub-threshold ones are dropped, and the
+rest of the name is published in clear text.
+
+```
+in   Kaebuse esitasid Ksenia Grigorjeva, Hillar Kõrvits ja Eerik-Niiles Kross.
+out  [PII] esitasid [PII], [PII] ja [PII]rik-Niiles Kross.
+```
+
+Same sentence, model in isolation:
+
+```
+simple   'Ee'(1.00) 'rik-Ni'(0.65) 'iles Kross'(0.81)   <- two below 0.83
+first    'Eerik-Niiles Kross'(1.00)
+max      'Eerik-Niiles Kross'(1.00)
+```
+
+Switching also lifts borderline organisations: `Transpordiamet` 0.71 under
+`simple`, 0.91 under `max` — missed becomes detected.
+
+- **Cause**: `presidio_flask_estbert.py:79`
+- **Fix**: `aggregation_strategy="first"` (verified clean on all probe sentences) or `"max"`
+- **Case**: `H04`
+
+### 3. `IP_ADDRESS` is never anonymised — LEAK
+
+> **✅ FIXED** — both config files gained an `IpAddress` pattern recognizer at
+> 0.9 (0.85 in the stanza config, matching its lower scores), so `IP_ADDRESS` is
+> reachable at the configured threshold instead of relying on a 0.6 built-in.
+>
+> Two details worth keeping:
+>
+> - The IPv6 alternatives are ordered **longest-first**. Python's `re` returns the
+>   first alternative that matches, and the built-in ordering clipped
+>   `2001:db8::1` down to `2001:db8::`, leaving the final group in clear text.
+> - The patterns are single-quoted YAML so the backslashes stay literal, and use
+>   `\b` boundaries rather than the hand-rolled lookarounds used elsewhere in the
+>   file — an earlier draft with those lookarounds matched `14:30` and `23:59` as
+>   IPv6 addresses, which would have turned every clock time into an IP.
+>
+> Verified against Estonian text that could collide — clock times, scores,
+> money sums, version numbers, dates — with no false positives:
+>
+> ```
+> in   Riigi Infosüsteemi Amet: serveri IP on 192.168.10.24 ja IPv6 2001:db8::1.
+> out  [ORGANISATSIOON]: serveri IP on [IP-AADRESS] ja IPv6 [IP-AADRESS].
+>
+> in   Otsus tehti 12.03.2026, istung toimub 20 aprillil 2026 kell 09:15.
+> out  [ISIK] tehti [KUUPÄEV], istung toimub [KUUPÄEV] kell [KUUPÄEV].
+> ```
+>
+> `IP_ADDRESS` F1 0.00 → **1.00** (3/3). Strict F1 0.825 → **0.844**,
+> recall 0.849 → **0.884**, missed spans 13 → 10. `DATE_TIME` still 1.00.
+>
+> Still open, as the original finding recommended: the rest of
+> `entities_to_detect` has not been audited entity-by-entity against the 0.83
+> cut. `IP_ADDRESS` was the one that showed up in this suite; there may be others
+> reachable only through a sub-threshold built-in.
+
+It is in `entities_to_detect`, but its only source is Presidio's built-in
+`IpRecognizer`, scoring **0.6** against a **0.83** threshold. Unlike the email,
+credit-card and crypto recognizers it has no validator to promote a match to
+full score, so it can never clear the bar. All 3 gold IPs missed, including one
+directly after the literal word "IP".
+
+- **Fix**: add IPv4/IPv6 patterns to the YAML `recognizers:` list at 0.9 like the
+  other Estonian patterns, or pass per-entity thresholds to `analyze()`. Audit
+  the rest of `entities_to_detect` the same way — anything relying on a sub-0.83
+  built-in without a validator is dead config.
+- **Cases**: `A08`, `D07`
+
+### 4. Denylist matches are discarded when another entity overlaps — LEAK
+
+> **✅ FIXED** — `analyze_with_lists()` now resolves denylist spans last and lets
+> them win, instead of handing them to the anonymizer to compete on score and
+> length.
+>
+> The obvious implementation — drop any detection that overlaps a denylist span —
+> would have introduced a *new* leak: a merged span like `Kalle Kask Phoenixis`
+> also protects a real name, and discarding it wholesale would publish that name.
+> So `subtract_spans()` cuts the denylist span out and keeps the remainder,
+> re-trimming the pieces to alphanumeric edges and dropping only what is left
+> empty.
+>
+> ```
+> DEFAULT keep, DENYLIST_MATCH redact, denylist ["Phoenixis"]
+> before  Projektis Phoenixis osales ka Sotsiaalkindlustusamet.   <- leaked
+> after   Projektis  osales ka Sotsiaalkindlustusamet.
+>
+> DEFAULT replace, DENYLIST_MATCH [SALASTATUD], denylist ["Phoenix"]
+> in      Kalle Kask Phoenixis kirjutas aruande.
+> after   [PII] [SALASTATUD] kirjutas aruande.    <- name still protected
+> ```
+>
+> Verified: cases `E03`, `E04`, `E05`, `E07`, `H02` all pass. Behaviour cases
+> 19/24 → **22/24**; the only remaining failures are findings 10 and 11.
+> Detection metrics unchanged.
+
+`DENYLIST_MATCH` is dropped during Presidio's overlap resolution if any NER span
+touches it, despite carrying score 1.0, so the caller's chosen operator for it
+never runs. Usually invisible (the overlapping entity is anonymised anyway), but
+a leak the moment the two operators differ — the natural "keep everything,
+redact secrets" configuration:
+
+```
+denylist ["Phoenixis"], DEFAULT keep, DENYLIST_MATCH redact
+in     Projektis Phoenixis osales ka Sotsiaalkindlustusamet.
+out    Projektis Phoenixis osales ka Sotsiaalkindlustusamet.   <- leaked
+spans  [('Sotsiaalkindlustusamet','ORGANIZATION','keep'),
+        ('Projektis Phoenixis','PERSON','keep')]               <- no DENYLIST_MATCH
+
+in     Meie plaan Phoenixis on salajane.      (no overlapping NER span)
+out    Meie plaan  on salajane.                                <- redacted correctly
+```
+
+- **Fix**: resolve denylist spans last and let them win — drop analyzer results
+  overlapping a denylist span before calling `anonymize()`. If the promise is
+  "always", the code has to enforce it.
+- **Cases**: `H02`, `E04`, `E07`
+
+### 5. Case-form synthesis produces nothing for the words it exists to expand — LEAK
+
+> **✅ FIXED** — `utils.py` and `presidio_flask_estbert.py`, in three parts.
+>
+> **POS tag.** `synthesize_word()` now tries `"H"` (pärisnimi) first for a
+> capitalised word and `"S"` first otherwise, falling back to the other tag when
+> the first yields nothing. Matching downstream is case-insensitive, so a
+> lowercase fallback form is still useful.
+>
+> **Multi-word entries.** Estonian inflects the head of the phrase, which is the
+> last word, so `synthesize_phrase()` inflects only that and keeps the prefix
+> fixed. `synthesize_all()` calls it instead of `synthesize_word()`.
+>
+> ```
+> 'Tallinn'                 ->  1 form   ->  14 forms
+> 'Phoenix'                 ->  1 form   ->  14 forms
+> 'Maksu- ja Tolliamet'     ->  1 form   ->  37 forms
+> 'Riigi Infosüsteemi Amet' ->  1 form   ->  37 forms
+> ```
+>
+> **Span containment.** Fixing the above surfaced a second defect in the same
+> feature: `apply_allowlist()` compared the *whole* detected span against the
+> allowlist, so an allowlisted word inside a wider model span was never spared.
+> With `allowlist: ["Tallinn"]`, the span `Phoenix Tallinnas` matched nothing and
+> both words were anonymised. It now trims allowlisted terms off either edge of a
+> span and drops the span only when nothing is left:
+>
+> ```
+> before  [ISIK] Maksu- ja Tolliametist juhib projekti [PII].
+> after   [ISIK] Maksu- ja Tolliametist juhib projekti [PII] Tallinnas.
+> ```
+>
+> Verified: cases `E01`, `E02`, `E05`, `E06` pass. Behaviour cases 16/24 → **19/24**.
+> Detection metrics unchanged, as expected — allow/denylists are per-request and
+> the detection cases send none.
+>
+> Known limit: an allowlisted term in the *middle* of a span is not split out,
+> only edges are trimmed. No case in the suite hits it.
+
+`synthesize_all()` calls Vabamorf with POS `"S"` (common noun). Capitalised
+proper nouns — exactly what allowlists and denylists contain — are not in that
+class, so Vabamorf returns `[]` and only the original word comes back.
+
+```
+'Tallinn'             -> 1 form  ['Tallinn']
+'Phoenix'             -> 1 form  ['Phoenix']
+'Maksu- ja Tolliamet' -> 1 form  ['Maksu- ja Tolliamet']
+
+synthesize('Tallinn','sg in','S') -> []
+synthesize('Tallinn','sg in','H') -> ['Tallinnas']
+'Microsoft' with "H"  -> 14 forms: Microsofti, Microsoftis, Microsoftile, ...
+cost: 1.2 ms/word
+```
+
+So `allowlist: ["Tallinn"]` does not spare "Tallinnas", and multi-word entries
+never match the inflected mentions that actually occur. The Swagger docstring
+promises the opposite. The allowlist *mechanism* is fine — the exact-form case
+(`E06`) passes.
+
+- **Cause**: `utils.py:41-42` — POS `"S"` should be `"H"`
+- **Fix**: pass `"H"`, and synthesise per whitespace-separated token so multi-word
+  entries expand. Then re-measure latency: the per-request cost is currently near
+  zero only because the feature does nothing.
+- **Cases**: `E01`, `E02`, `E04`, `E05`
+
+### 6. Every `PERSON` false positive comes from spaCy, not the Estonian model
+
+> **✅ FIXED** — `SpacyRecognizer` joined `MedicalLicenseRecognizer` in
+> `unwanted_recognizers`, so it is dropped from the registry in
+> `load_presidio_from_config()`. spaCy remains the `NlpEngine` for tokenisation
+> and lemmas; it just no longer contributes entities. `GET /recognizers` confirms
+> it is gone.
+>
+> This was the largest single improvement in the whole set:
+>
+> |                       | before                | after                           |
+> | --------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1     | 0.809 / 0.884 / 0.844 | **0.907 / 0.907 / 0.907** |
+> | False positives       | 18                    | **8**                     |
+> | `PERSON` P / R / F1 | 0.615 / 1.00 / 0.762  | **1.00 / 1.00 / 1.00**    |
+> | `ORGANIZATION` F1   | 0.735                 | 0.784                           |
+> | Missed spans          | 10                    | 8                               |
+>
+> Every one of the ten `PERSON` false positives is gone, and the spurious
+> `LOCATION` hits disappeared with them. `ORGANIZATION` recall rose too
+> (0.72 → 0.80), because spaCy was previously claiming agencies as people and
+> winning the overlap.
+>
+> Ordering mattered: doing this before finding 1 would have made things worse,
+> since spaCy was the only thing still finding names once the transformer blanked
+> on long input.
+
+All 10 `PERSON` false positives trace to `xx_ent_wiki_sm`:
+
+```
+spaCy alone:   'Soovin'->PER 'Palun'->PER 'Jah'->PER 'Otsus'->PER 'Kaebuse'->PER
+               'Töötukassas'->PER 'Vabariigi Valitsus'->PER
+               'Tallinna Linnavalitsusele'->PER
+
+Estonian model alone, same sentences:
+               'Töötukassa'->ORG(0.97)  'Vabariigi Valitsus'->ORG(0.85)
+               'Tallinna Linnavalitsus'->ORG(0.89)  'Statistikaamet'->ORG(0.94)
+               — no false PERSON hits on any probe sentence
+```
+
+Over-anonymisation destroys text, and the agency mislabels mean consumers that
+branch on entity type see a person where the record names an institution.
+
+- **Fix**: remove `SpacyRecognizer` from the registry the way
+  `MedicalLicenseRecognizer` already is, keeping spaCy as the `NlpEngine` for
+  tokenisation only. Do finding 1 first — spaCy is currently the fallback
+  masking it.
+
+### 7. One global threshold of 0.83 cuts real agency names
+
+> **✅ FIXED** — the config gained an `entity_score_thresholds:` block, and
+> `apply_score_thresholds()` in `analyze_with_lists()` filters per entity type.
+> `AnalyzerEngine` only supports one threshold, so it is now built with the
+> *lowest* threshold in play and the real filtering happens afterwards.
+>
+> `ORGANIZATION: 0.45`; everything else keeps 0.83. The number came from
+> measuring, not guessing — under the new aggregation the missed agencies score
+> `Sotsiaalkindlustusamet` 0.77, `Riigikogu` 0.53, `Transpordiamet` 0.50, while
+> the *false* `ORGANIZATION` hits score `Riigilõiv` 0.98 and `RT I` 0.98. The two
+> populations do not overlap, so lowering the threshold buys recall without
+> admitting those errors.
+>
+> |                             | before                | after                           |
+> | --------------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1           | 0.930 / 0.909 / 0.920 | **0.933 / 0.944 / 0.939** |
+> | `ORGANIZATION` exact      | 20                    | **26**                    |
+> | `ORGANIZATION` P / R / F1 | 0.769 / 0.800 / 0.784 | **0.867 / 0.929 / 0.897** |
+> | Missed spans                | 8                     | **5**                     |
+>
+> `Päästeamet` is still missed in both cases that use it, at any threshold: the
+> model does not predict it as an entity at all, so no amount of tuning recovers
+> it. That is a model limitation, not a configuration one — worth reporting
+> upstream or adding as a pattern recognizer if these names matter operationally.
+>
+> Also corrected here: `Rahvastikuregistris` was being counted as a false
+> positive when it is a correct detection the gold set had omitted.
+
+The model finds them; they score under the cut, which makes behaviour look
+erratic when it is a threshold sitting inside the score distribution.
+
+```
+Maksu- ja Tolliameti    0.99 kept     Transpordiamet   0.71 cut
+Sotsiaalkindlustusameti 0.98 kept     Riigikogu        0.80 cut
+Töötukassa              0.97 kept     Rahvastiku-      0.61 cut
+```
+
+- **Fix**: per-entity thresholds — identifiers stay strict, `ORGANIZATION` drops
+  to ~0.6. Fixing finding 2 raises these same scores.
+- 8 of the 14 misses are `ORGANIZATION`.
+
+### 8. Case endings survive outside the placeholder
+
+> **✅ FIXED** as a side effect of finding 2. Word-level aggregation covers the
+> whole word including its case suffix, and `_normalize_span()` keeps the
+> surrounding punctuation out of the span.
+>
+> ```
+> before  [ISIK] elab [GPE], kolis sinna [GPE]st ja töötas varem [GPE]s
+>         [ORGANISATSIOON]s.
+> after   [ISIK] elab [GPE], kolis sinna [GPE] ja töötas varem [GPE]
+>         [ORGANISATSIOON].
+> ```
+>
+> All 7 partial span matches became exact; the suite now reports 0 partial spans.
+
+The model tags the stem and leaves the Estonian case suffix behind. All 7 partial
+span matches are this shape. No identity leak, but ungrammatical output, and the
+trailing morpheme discloses the grammatical case (and with a street name, part of
+the address).
+
+```
+in   Kadri Sepp elab Tallinnas, kolis sinna Tartust ja töötas varem Narvas
+     Politsei- ja Piirivalveametis.
+out  [ISIK] elab [GPE], kolis sinna [GPE]st ja töötas varem [GPE]s
+     [ORGANISATSIOON]s.
+```
+
+- **Fix**: extend spans forward over trailing word characters before anonymising,
+  or lemma-align using the EstNLTK analysis already in the dependency set.
+
+### 9. Car-plate regex matches money; plates get labelled as organisations
+
+> **✅ FIXED** — three changes, because this finding was three problems wearing
+> one hat.
+>
+> **The plate pattern.** Now uppercase-only (Estonian plates are) with an
+> exclusion list for currency codes, so `500 EUR`, `999 USD`, `250 kg` and
+> `500 eur` no longer match. `45 XYZ`, `123 ABC` and `123ABC` still do.
+>
+> **The phone pattern.** Its country-code group could be satisfied by digits
+> *inside* a longer number: in `49403136515` it read `49` as the country code and
+> reported an isikukood as `PHONE_NUMBER`. A country code now has to be followed
+> by a separator, and the local part is capped at the 7–8 digits Estonian numbers
+> actually have, so an 11-digit personal code cannot fit. All four phone formats
+> in `C02` still match, and a credit card no longer yields a partial phone match.
+>
+> **Plate ownership.** Raising the pattern's score did not settle the conflict —
+> the model labels a plate `ORGANIZATION` at up to **1.00**, which nothing can
+> outbid. Settled in `_normalize_span()` instead, the same way e-mail addresses
+> are: a span shaped like a plate is left to the `CAR_NUMBER` recognizer. The
+> pattern score stayed at 0.9.
+>
+> ```
+> before  sõiduk [ORGANISATSIOON] sai trahvi summas [AUTONUMBER], teine sõiduk [AUTONUMBER]
+> after   sõiduk [AUTONUMBER] sai trahvi summas 500 EUR, teine sõiduk [AUTONUMBER]
+> ```
+>
+> |                             | before                | after                           |
+> | --------------------------- | --------------------- | ------------------------------- |
+> | Strict P / R / F1           | 0.933 / 0.944 / 0.939 | **0.966 / 0.977 / 0.972** |
+> | `CAR_NUMBER` P / R / F1   | 0.500 / 0.333 / 0.400 | **1.00 / 1.00 / 1.00**    |
+> | `EE_PERSONAL_CODE` recall | 0.833                 | **1.00**                  |
+> | `PHONE_NUMBER` precision  | 0.857                 | **1.00**                  |
+> | False positives             | 6                     | **2**                     |
+> | Planted traps fired         | 1                     | **0**                     |
+>
+> Cosmetic residue: `(+372) 55512345` matches as `+372) 55512345`, so the
+> anonymised text keeps an unbalanced `(`. Over-capture of punctuation, not a
+> leak.
+
+`[0-9]{2,3}\s?[a-zA-Z]{3}` is also the shape of a currency amount. Meanwhile the
+model claims real plates as `ORGANIZATION` and wins the overlap. Worst entity in
+the suite: F1 0.40.
+
+```
+in     Transpordiamet: sõiduk 123 ABC sai trahvi summas 500 EUR, teine sõiduk 45 XYZ…
+spans  ('500 EUR','CAR_NUMBER')  ('123 ABC','ORGANIZATION')  ('45 XYZ','CAR_NUMBER')
+```
+
+A personal code is likewise captured as `PHONE_NUMBER` when comma-adjacent —
+same over-broad-regex family.
+
+- **Fix**: require an Estonian plate shape; negative lookahead for
+  `EUR|USD|EEK|km|kg`.
+- **Cases**: `C04`, `A05`, `C01`
+
+### 10. `hash_type` is accepted and ignored
+
+> **✅ FIXED** — `app.py` gained the missing `hash` branch, which forwards
+> `hash_type` (defaulting to sha256) and rejects anything outside
+> sha256/sha512/md5 with a 400. `keep` was folded in alongside `redact` as a
+> no-parameter operator, and an unknown operator type now returns 400 instead of
+> falling through to `OperatorConfig` with no params, where Presidio quietly
+> treated it as `replace`.
+>
+> Verified against digests computed independently:
+>
+> ```
+> md5     -> 32 hex chars   c1aa0f35ce4014dfeaca8d82...   matches hashlib
+> sha256  -> 64 hex chars   c6a32cd2f902affa46a9468d...   matches hashlib
+> sha512  -> 128 hex chars  3747cb901db103e82ab6f273...   matches hashlib
+> ```
+>
+> Case `F04` passes and reports "declared hash_type=md5 was honoured".
+> Behaviour cases 22/24 → **23/24**.
+
+The operator parser forwards params for `replace`, `mask`, `redact`, `encrypt`.
+`hash` has no branch, so `hash_type` never reaches `OperatorConfig`. A caller
+asking for md5 gets sha256 and no error (64 hex chars in the output).
+
+- **Fix**: add the branch; reject unknown operator types instead of silently
+  falling through to `replace`.
+- **Case**: `F04`
+
+### 11. In-handler validation errors are reported as 500
+
+> **✅ FIXED** — the handler now catches `HTTPException` ahead of the blanket
+> `except Exception` and re-raises it, so the status `api.abort()` asked for is
+> the status the client gets. Genuine server faults still return 500.
+>
+> ```
+> {"texts": []}                      400  Field 'texts' cannot be empty
+> {"texts": {"a": 1}}                400  'texts' is not of type 'array'
+> hash_type: "crc32"                 400  Unsupported hash_type 'crc32'
+> type: "scramble"                   400  Unsupported anonymizer type 'scramble'
+> language: "et" (not registered)    500  No matching recognizers were found
+> valid request                      200
+> ```
+>
+> Case `G03` passes. **Behaviour cases 23/24 → 24/24.**
+
+An empty `texts` array is rejected, but the `api.abort(400, …)` doing it is
+raised inside the route's own `try`, caught by the blanket `except Exception`,
+and re-wrapped as a 500 whose body still quotes the original 400. Every
+hand-written validation in the handler is affected; the checks that do return
+400 do so because Flask-RESTX schema validation runs before the handler.
+
+```
+POST /anonymize {"texts": []}  ->  HTTP 500
+{"message": "Anonymization failed: 400 Bad Request: The browser (or proxy)
+             sent a request that this server could not understand."}
+```
+
+- **Fix**: validate before the `try`, or re-raise `HTTPException` ahead of the
+  generic handler. A client cannot currently tell a bad request from a server fault.
+- **Case**: `G03`
+
+## What holds up
+
+- **Estonian identifiers are exact** — F1 1.00 over 25 spans: personal codes,
+  document numbers, IBANs, credit cards, crypto addresses. Correct boundaries,
+  zero false positives. These come from YAML patterns at 0.9–0.95.
+- **Dates handle real Estonian** — F1 1.00 over 8 spans: `12.03.2026`,
+  `15 märts 2026`, `20 aprillil 2026`, clock times.
+- **No name missed under the token limit** — `PERSON` recall 1.00 over 16 spans,
+  including diacritics (`Kärt Õunapuu`, `Žanna Šišova`), hyphenated names
+  (`Mari-Liis Kask-Tamm`) and inflected forms (`Jaan Tammele`).
+- **Places and addresses, inflected** — recall 1.00: `Tallinnas`, `Tartust`,
+  `Narvas`, `Liivalaia 2`, `Pärnu mnt 42`, split across `LOCATION`/`GPE` as
+  configured.
+- **Operators behave** — `replace`, `mask`, `redact`, `encrypt`, `keep` all correct,
+  including per-entity overrides on `DEFAULT`. With no `anonymizers`, the YAML
+  defaults produce proper Estonian placeholders.
+- **Batching is honest** — order and arity preserved, empty string passed through,
+  a seven-turn transcript fully anonymised.
+- **Precision traps mostly held** — money sums, percentages, statute references
+  (`§ 32`, `RT I 2002, 26, 150`), court case numbers (`3-21-1234`) and room
+  numbers all left alone. Only `500 EUR` fired.
+
+## Per-entity metrics
+
+F1 before the fixes → after. Every entity either improved or held at 1.00.
+
+| Entity           | exact | partial | missed | FP |    P |    R |             F1 |  was |
+| ---------------- | ----: | ------: | -----: | -: | ---: | ---: | -------------: | ---: |
+| CAR_NUMBER       |     3 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.40 |
+| CREDIT_CARD      |     1 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| CRYPTO           |     1 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| DATE_TIME        |     8 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| EE_PERSONAL_CODE |     6 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.91 |
+| EMAIL_ADDRESS    |     3 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| EST_ID_DOC       |     3 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| IBAN_CODE        |     3 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| IP_ADDRESS       |     3 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.00 |
+| LOCATION / GPE   |     7 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+| ORGANIZATION     |    26 |       0 |      2 |  2 | 0.93 | 0.93 | **0.93** | 0.71 |
+| PERSON           |    16 |       0 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.76 |
+| PHONE_NUMBER     |     5 |       1 |      0 |  0 | 1.00 | 1.00 | **1.00** | 0.92 |
+| URL              |     1 |       0 |      0 |  0 | 1.00 | 1.00 |           1.00 | 1.00 |
+
+Baseline for comparison:
+
+| Entity           |    P |    R |   F1 |
+| ---------------- | ---: | ---: | ---: |
+| PHONE_NUMBER     | 0.86 | 1.00 | 0.92 |
+| EE_PERSONAL_CODE | 1.00 | 0.83 | 0.91 |
+| PERSON           | 0.62 | 1.00 | 0.76 |
+| ORGANIZATION     | 0.74 | 0.68 | 0.71 |
+| CAR_NUMBER       | 0.50 | 0.33 | 0.40 |
+| IP_ADDRESS       | 0.00 | 0.00 | 0.00 |
+
+Latency after the fixes (3 runs each, median): plain 0.135 s, with allowlist
+0.116 s, with denylist 0.166 s, both + 10 words 0.209 s, batch of 10 texts
+1.261 s. Against the baseline of 0.129 / 0.118 / 0.125 / 0.170 / 1.200 s, that is
+flat for a single text and about 20 % on the allow/denylist probes — the case
+synthesis now does real work where before it returned the input unchanged, which
+is the cost of finding 5 actually functioning. Windowing costs nothing until a
+text exceeds ~512 tokens, then scales linearly with the number of windows.
+
+A batch of ten still costs ten times one text: `MAX_WORKERS` is set in
+`docker-compose.yml` but no parallelism exists in the handler.
+
+## Fix order, as executed
+
+The planned order held up, and sequencing turned out to matter in two places.
+
+| Step | Finding                                            | Strict F1 after | Behaviour after |
+| ---- | -------------------------------------------------- | --------------- | --------------- |
+| 1    | Chunk long input (1)                               | 0.760           | 15/24           |
+| 2    | Word-level aggregation + span normalization (2, 8) | 0.825           | 16/24           |
+| 3    | Vabamorf POS + allowlist trimming (5)              | 0.825           | 19/24           |
+| 4    | Reachable `IP_ADDRESS` recognizer (3)             | 0.844           | 19/24           |
+| 5    | Denylist wins overlap (4)                          | 0.844           | 22/24           |
+| 6    | Drop `SpacyRecognizer` (6)                        | 0.907           | 22/24           |
+| —   | Gold-annotation corrections                        | 0.939           | 22/24           |
+| 7    | Per-entity thresholds (7)                          | 0.939           | 22/24           |
+| 8    | Plate and phone patterns (9)                       | 0.972           | 22/24           |
+| 9    | Forward `hash_type` (10)                          | 0.972           | 23/24           |
+| 10   | Correct status codes (11)                          | 0.972           | **24/24** |
+
+Two ordering dependencies were real:
+
+- **Chunking had to precede dropping spaCy.** spaCy was the only source still
+  finding names once the transformer blanked on long input, so removing it first
+  would have deepened the leak instead of fixing a precision problem.
+- **The threshold could only be chosen after aggregation changed.** Word-level
+  aggregation moves every organisation score, so a threshold tuned against the
+  old scores would have been wrong.
+
+Three fixes also needed a second pass because the obvious version introduced a
+new defect: `"first"` aggregation over-captured until `_normalize_span()` was
+added; dropping denylist-overlapping detections would have exposed adjacent
+names until `subtract_spans()` replaced it; and out-scoring the model on plates
+was impossible until ownership was settled in code instead.
+
+## Repo changes
+
+- `tests/gov_chat_cases.py`, `tests/test_gov_chats.py`, `tests/results.json`,
+  `tests/FINDINGS.md` — new.
+- `presidio_flask_estbert.py` — windowing, span normalization, denylist
+  precedence, allowlist trimming, per-entity thresholds, `SpacyRecognizer`
+  removal.
+- `utils.py` — Vabamorf POS selection and multi-word phrase synthesis.
+- `app.py` — `hash` operator branch, operator-type validation, `HTTPException`
+  passthrough.
+- `config/*.yml` — `entity_score_thresholds`, `IpAddress` recognizer, tightened
+  plate and phone patterns. Both configs updated; the stanza one is not on the
+  default path but was kept in step.
+- `pyproject.toml` — `per-file-ignores` allowing `print` under `tests/`, so
+  ruff's `T201` does not fail CI on a CLI reporter.
+
+`ruff check`, `ruff format --check` and `pyright` are clean throughout, and the
+suite exits 0.
