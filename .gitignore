@@ -1,0 +1,10 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# uv / venv
+.venv/
+
+# Console output from tests/test_gov_chats.py runs; tests/results.json is the
+# machine-readable artefact that is meant to be committed.
+tests/run_*.txt

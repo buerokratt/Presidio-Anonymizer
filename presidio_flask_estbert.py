@@ -12,14 +12,55 @@ from presidio_analyzer.entity_recognizer import EntityRecognizer
 from typing import List, Optional
 import logging
 import os
+import re
 
 logger = logging.getLogger("presidio-flask-api")
+
+# Estonian abbreviations whose full stop does not end a sentence. Used when
+# deciding where a model span may be cut, so "Pärnu mnt. 12" stays one span.
+ABBREVIATIONS = frozenset(
+    {
+        "tn",  # tänav
+        "mnt",  # maantee
+        "pst",  # puiestee
+        "kt",  # kaubatänav
+        "nr",  # number
+        "lk",  # lehekülg
+        "vt",  # vaata
+        "jne",  # ja nii edasi
+        "jm",  # ja muud
+        "sh",  # sealhulgas
+        "nt",  # näiteks
+        "dr",  # doktor
+        "hr",  # härra
+        "pr",  # proua
+    }
+)
+
+# Per-entity score thresholds read from the config. AnalyzerEngine only supports
+# one threshold for everything, so the engine is built with the lowest threshold
+# in play and apply_score_thresholds() does the real per-entity filtering. The
+# app builds exactly one analyzer per process, so these live at module level
+# instead of being threaded through every call site.
+entity_score_thresholds: dict[str, float] = {}
+default_score_threshold: float = 0.8
 
 
 class EstBERTRecognizerONNX(EntityRecognizer):
     """Custom recognizer for tartuNLP/EstBERT_NER model with ONNX optimization"""
 
     ENTITIES = ["PERSON", "ORGANIZATION", "LOCATION", "DATE_TIME", "GPE"]
+
+    # XLM-RoBERTa has 514 position embeddings. Feeding it more makes the ONNX
+    # session throw, which previously wiped out every model detection for the
+    # whole request, so longer text is analysed in overlapping windows and the
+    # spans are mapped back onto the original offsets. The overlap gives an
+    # entity that lands on a window edge a second chance in the next window.
+    WINDOW_TOKENS = 400
+    WINDOW_OVERLAP_TOKENS = 50
+
+    # An Estonian registration plate, which the CAR_NUMBER recognizer owns.
+    PLATE_SHAPE = re.compile(r"[0-9]{2,3}\s?[A-ZÕÄÖÜ]{3}")
 
     def __init__(
         self, model_name: str = "tartuNLP/EstBERT_NER", supported_language: str = "xx"
@@ -73,11 +114,16 @@ class EstBERTRecognizerONNX(EntityRecognizer):
             logger.info("Model loaded with ONNX optimization")
 
             # Create pipeline with ONNX model
+            # "simple" does not merge sentencepiece continuations for XLM-R, so
+            # a name came back as several fragments scored separately - the ones
+            # below the threshold were dropped and the rest of the name survived
+            # in clear text. "first" takes the first subword's label for the
+            # whole word and keeps names intact.
             self.nlp_pipeline = pipeline(
                 "ner",
                 model=self.model,  # type: ignore
                 tokenizer=self.tokenizer,
-                aggregation_strategy="simple",
+                aggregation_strategy="first",
                 device=-1,  # CPU
             )
 
@@ -103,6 +149,168 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         """Load method - required by Presidio"""
         pass
 
+    def _char_windows(self, text: str) -> List[tuple[int, str]]:
+        """Whitespace-aligned fallback split, used when offsets are unavailable."""
+        budget = self.WINDOW_TOKENS * 3  # conservative chars-per-token estimate
+        if len(text) <= budget:
+            return [(0, text)]
+
+        windows = []
+        start = 0
+        while start < len(text):
+            end = min(start + budget, len(text))
+            if end < len(text):
+                split = text.rfind(" ", start, end)
+                if split > start:
+                    end = split
+            windows.append((start, text[start:end]))
+            start = end
+        return windows
+
+    def _windows(self, text: str) -> List[tuple[int, str]]:
+        """Split text into model-sized windows as (char offset, window text)."""
+        try:
+            encoded = self.tokenizer(
+                text, add_special_tokens=False, return_offsets_mapping=True
+            )
+            offsets = [
+                (start, end) for start, end in encoded["offset_mapping"] if end > start
+            ]
+        except Exception as e:
+            logger.warning(f"Token offsets unavailable, splitting on whitespace: {e}")
+            return self._char_windows(text)
+
+        if not offsets:
+            return [(0, text)]
+        if len(offsets) <= self.WINDOW_TOKENS:
+            return [(0, text)]
+
+        step = self.WINDOW_TOKENS - self.WINDOW_OVERLAP_TOKENS
+        windows = []
+        for first in range(0, len(offsets), step):
+            window = offsets[first : first + self.WINDOW_TOKENS]
+            if not window:
+                break
+            char_start = min(start for start, _ in window)
+            char_end = max(end for _, end in window)
+            windows.append((char_start, text[char_start:char_end]))
+            if first + self.WINDOW_TOKENS >= len(offsets):
+                break
+
+        logger.info(
+            f"Text of {len(text)} chars / {len(offsets)} tokens analysed "
+            f"in {len(windows)} windows"
+        )
+        return windows
+
+    def _sentence_chunks(
+        self, text: str, start: int, end: int
+    ) -> List[tuple[int, int]]:
+        """Cut a span at newlines and sentence ends.
+
+        Word-level aggregation can run a span straight through a full stop into
+        the next line, so in a transcript "…Tolliametis.\\nNõustaja: Teie võlg…"
+        came back as one ORGANIZATION and swallowed the speaker label.
+
+        A newline is always a boundary - no entity name contains one. A full
+        stop is only a boundary when whitespace follows, which keeps a domain
+        such as www.eesti.ee intact, and not when what precedes it is an initial
+        or a known abbreviation, which keeps "J. Tamm" and "Pärnu mnt. 12"
+        whole.
+        """
+        chunks = []
+        chunk_start = start
+
+        for match in re.finditer(r"\n+|(?<=[.!?])[ \t]+", text[start:end]):
+            boundary = start + match.start()
+            is_newline = "\n" in match.group(0)
+            # A newline is always a boundary; a full stop only when it really
+            # ends a clause rather than abbreviating the word before it.
+            if not is_newline and self._ends_in_abbreviation(
+                text[chunk_start:boundary]
+            ):
+                continue
+            chunks.append((chunk_start, boundary))
+            chunk_start = start + match.end()
+
+        chunks.append((chunk_start, end))
+        return [(a, b) for a, b in chunks if text[a:b].strip()]
+
+    @staticmethod
+    def _ends_in_abbreviation(text: str) -> bool:
+        """Whether a full stop here abbreviates a word rather than ends a clause."""
+        last_word = text.rstrip().rsplit(maxsplit=1)[-1] if text.strip() else ""
+        stem = last_word.rstrip(".!?")
+        if len(stem) <= 1:  # an initial: "J."
+            return True
+        if re.fullmatch(r"(?:[^\W\d_]\.)+", last_word):  # "A.S."
+            return True
+        return stem.lower() in ABBREVIATIONS
+
+    def _runs_without_addresses(
+        self, text: str, start: int, end: int
+    ) -> List[tuple[int, int]]:
+        """Split a span into runs of words, excluding any that hold an address.
+
+        Only the offending word is dropped, never the whole span: a span
+        covering "Jaan Tamm jaan@eesti.ee" has to keep protecting the name.
+        """
+        runs: List[tuple[int, int]] = []
+        run_start: Optional[int] = None
+        run_end = start
+
+        for token in re.finditer(r"\S+", text[start:end]):
+            if "@" in token.group(0):
+                if run_start is not None:
+                    runs.append((run_start, run_end))
+                    run_start = None
+                continue
+            if run_start is None:
+                run_start = start + token.start()
+            run_end = start + token.end()
+
+        if run_start is not None:
+            runs.append((run_start, run_end))
+        return runs
+
+    def _normalize_span(self, text: str, start: int, end: int) -> List[tuple[int, int]]:
+        """Tidy one model span into zero or more spans worth reporting.
+
+        Word-level aggregation is greedy: it takes in trailing punctuation and
+        runs two neighbouring names together across a comma. It also labels an
+        e-mail address as a person, because the local part often is a first
+        name - and that span then outranks the e-mail recognizer's, replacing a
+        [E-POST] placeholder with [ISIK]. So each span is cut at sentence and
+        line boundaries, then on commas and semicolons, addresses are carved out
+        word by word, and what is left is stripped back to alphanumeric edges.
+        """
+        spans = []
+        clauses = [
+            (sentence_start + clause.start(), sentence_start + clause.end())
+            for sentence_start, sentence_end in self._sentence_chunks(text, start, end)
+            for clause in re.finditer(r"[^,;]+", text[sentence_start:sentence_end])
+        ]
+
+        for chunk_start, chunk_end in clauses:
+            for piece_start, piece_end in self._runs_without_addresses(
+                text, chunk_start, chunk_end
+            ):
+                while piece_start < piece_end and not text[piece_start].isalnum():
+                    piece_start += 1
+                while piece_end > piece_start and not text[piece_end - 1].isalnum():
+                    piece_end -= 1
+
+                if piece_end <= piece_start:
+                    continue
+                # A registration plate is not an organisation name. The model
+                # labels one ORGANIZATION at up to 1.00, which outranks any score
+                # the CAR_NUMBER pattern can claim, so ownership has to be
+                # settled here rather than by score.
+                if self.PLATE_SHAPE.fullmatch(text[piece_start:piece_end]):
+                    continue
+                spans.append((piece_start, piece_end))
+        return spans
+
     def analyze(
         self, text: str, entities: List[str], nlp_artifacts: NlpArtifacts | None = None
     ) -> List[RecognizerResult]:
@@ -114,10 +322,26 @@ class EstBERTRecognizerONNX(EntityRecognizer):
 
         try:
             # ONNX inference - releases GIL, allows true parallel execution
-            ner_results = self.nlp_pipeline(text)
-            if not isinstance(ner_results, list):
-                logger.warning(f"Unexpected NER output format: {ner_results}")
-                return results
+            ner_results = []
+            seen: set[tuple[str, int, int]] = set()
+            for offset, window in self._windows(text):
+                window_results = self.nlp_pipeline(window)
+                if not isinstance(window_results, list):
+                    logger.warning(f"Unexpected NER output format: {window_results}")
+                    continue
+                for entity in window_results:
+                    entity["start"] += offset
+                    entity["end"] += offset
+                    # Overlapping windows can report the same span twice.
+                    key = (
+                        str(entity.get("entity_group", entity.get("entity", ""))),
+                        entity["start"],
+                        entity["end"],
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    ner_results.append(entity)
 
             for entity in ner_results:
                 entity_type = (
@@ -127,11 +351,16 @@ class EstBERTRecognizerONNX(EntityRecognizer):
                 )
                 presidio_entity = self.label_mapping.get(entity_type, entity_type)
 
-                if presidio_entity in entities:
+                if presidio_entity not in entities:
+                    continue
+
+                for start, end in self._normalize_span(
+                    text, entity["start"], entity["end"]
+                ):
                     result = RecognizerResult(
                         entity_type=presidio_entity,
-                        start=entity["start"],
-                        end=entity["end"],
+                        start=start,
+                        end=end,
                         score=entity["score"],
                     )
                     results.append(result)
@@ -200,7 +429,14 @@ class DenylistRecognizer(EntityRecognizer):
 def apply_allowlist(
     results: List[RecognizerResult], text: str, allowlist: List[str]
 ) -> List[RecognizerResult]:
-    """Filter out results that match words in the allowlist"""
+    """Filter out results that match words in the allowlist
+
+    A detected span is dropped when it is entirely allowlisted. When an
+    allowlisted term only sits at one edge of a wider span, the span is trimmed
+    back instead of being kept whole - otherwise a model span such as
+    "Phoenix Tallinnas" would anonymise an allowlisted "Tallinn" along with the
+    codename next to it.
+    """
     if not allowlist:
         return results
 
@@ -208,13 +444,116 @@ def apply_allowlist(
     filtered_results = []
 
     for result in results:
-        detected_text = text[result.start : result.end].lower()
-        if detected_text not in allowlist_lower:
-            filtered_results.append(result)
-        else:
-            logger.debug(f"Filtered out '{detected_text}' due to allowlist")
+        start, end = result.start, result.end
+
+        trimmed = True
+        while trimmed and start < end:
+            trimmed = False
+            span_lower = text[start:end].lower()
+            for term in allowlist_lower:
+                if not term or len(term) > len(span_lower):
+                    continue
+                if span_lower == term:
+                    start = end
+                    trimmed = True
+                    break
+                if (
+                    span_lower.endswith(term)
+                    and not span_lower[-len(term) - 1].isalnum()
+                ):
+                    end -= len(term)
+                    trimmed = True
+                    break
+                if span_lower.startswith(term) and not span_lower[len(term)].isalnum():
+                    start += len(term)
+                    trimmed = True
+                    break
+            # Whitespace and punctuation exposed by a trim are not PII either.
+            while start < end and not text[start].isalnum():
+                start += 1
+            while end > start and not text[end - 1].isalnum():
+                end -= 1
+
+        if start >= end:
+            logger.debug(
+                f"Filtered out '{text[result.start : result.end]}' due to allowlist"
+            )
+            continue
+
+        if (start, end) != (result.start, result.end):
+            logger.debug(
+                f"Trimmed '{text[result.start : result.end]}' to "
+                f"'{text[start:end]}' due to allowlist"
+            )
+            result = RecognizerResult(
+                entity_type=result.entity_type,
+                start=start,
+                end=end,
+                score=result.score,
+            )
+
+        filtered_results.append(result)
 
     return filtered_results
+
+
+def apply_score_thresholds(
+    results: List[RecognizerResult], text: str
+) -> List[RecognizerResult]:
+    """Drop results below the threshold configured for their entity type."""
+    kept = []
+    for result in results:
+        threshold = entity_score_thresholds.get(
+            result.entity_type, default_score_threshold
+        )
+        if result.score >= threshold:
+            kept.append(result)
+        else:
+            logger.debug(
+                f"Dropped {result.entity_type} '{text[result.start : result.end]}' "
+                f"scoring {result.score:.2f} below {threshold}"
+            )
+    return kept
+
+
+def subtract_spans(
+    result: RecognizerResult, blockers: List[RecognizerResult], text: str
+) -> List[RecognizerResult]:
+    """Cut the blocker spans out of `result` and return whatever is left of it.
+
+    Used to carve a denylist match out of an overlapping detection without
+    losing the rest of that detection, which may be real PII in its own right.
+    """
+    pieces = [(result.start, result.end)]
+
+    for blocker in blockers:
+        remaining = []
+        for start, end in pieces:
+            if blocker.end <= start or blocker.start >= end:
+                remaining.append((start, end))
+                continue
+            if start < blocker.start:
+                remaining.append((start, blocker.start))
+            if blocker.end < end:
+                remaining.append((blocker.end, end))
+        pieces = remaining
+
+    trimmed = []
+    for start, end in pieces:
+        while start < end and not text[start].isalnum():
+            start += 1
+        while end > start and not text[end - 1].isalnum():
+            end -= 1
+        if end > start:
+            trimmed.append(
+                RecognizerResult(
+                    entity_type=result.entity_type,
+                    start=start,
+                    end=end,
+                    score=result.score,
+                )
+            )
+    return trimmed
 
 
 def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecognizer]:
@@ -280,17 +619,40 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
         logger.error(f"✗ NLP engine creation failed: {e}")
         raise
 
+    # Score thresholds. The engine gets the lowest threshold any entity uses so
+    # it cannot pre-filter a result that an entity-specific threshold would still
+    # admit; apply_score_thresholds() then filters per entity.
+    global entity_score_thresholds, default_score_threshold
+    default_score_threshold = float(config.get("default_score_threshold", 0.8))
+    entity_score_thresholds = {
+        str(entity): float(score)
+        for entity, score in (config.get("entity_score_thresholds") or {}).items()
+    }
+    engine_threshold = min([default_score_threshold, *entity_score_thresholds.values()])
+    logger.info(
+        f"Score thresholds: default {default_score_threshold}, "
+        f"per-entity {entity_score_thresholds or 'none'}, engine {engine_threshold}"
+    )
+
     # Create analyzer
     logger.info("Creating AnalyzerEngine...")
     analyzer = AnalyzerEngine(
         nlp_engine=nlp_engine,
         supported_languages=supported_languages,
-        default_score_threshold=config.get("default_score_threshold", 0.8),
+        default_score_threshold=engine_threshold,
     )
     logger.info(" AnalyzerEngine created")
 
-    # Remove unwanted recognizers
-    unwanted_recognizers = ["MedicalLicenseRecognizer"]
+    # Remove unwanted recognizers.
+    #
+    # SpacyRecognizer wraps xx_ent_wiki_sm, the multilingual model that backs the
+    # NlpEngine. Running the two NER sources separately traced every PERSON false
+    # positive in the audit to it - sentence-initial verbs such as Soovin and
+    # Palun, common nouns such as Otsus and Kaebuse, and worse, agencies labelled
+    # as people: Töötukassas, Vabariigi Valitsus, Tallinna Linnavalitsusele. The
+    # Estonian model labels all of those correctly. spaCy stays as the NlpEngine
+    # for tokenisation and lemmas; it just no longer contributes entities.
+    unwanted_recognizers = ["MedicalLicenseRecognizer", "SpacyRecognizer"]
     for recognizer_name in unwanted_recognizers:
         try:
             analyzer.registry.remove_recognizer(recognizer_name)
@@ -383,6 +745,7 @@ def analyze_with_lists(
             return_decision_process=return_decision_process,
             correlation_id=correlation_id,
         )
+        results = apply_score_thresholds(results, text)
         logger.info(f"  Found {len(results)} entities")
     except Exception as e:
         logger.error(f"  Analysis failed: {e}", exc_info=True)
@@ -398,6 +761,31 @@ def analyze_with_lists(
             denylist=denylist, entity_type="DENYLIST_MATCH", supported_language=language
         )
         denylist_results = denylist_recognizer.analyze(text, ["DENYLIST_MATCH"])
+
+        # A denylist entry is a promise that the word is treated as PII, so it
+        # has to win any overlap. Left to compete, the anonymizer's conflict
+        # resolution preferred a longer overlapping NER span and dropped the
+        # DENYLIST_MATCH result, which silently discarded the operator chosen
+        # for it - with DEFAULT=keep and DENYLIST_MATCH=redact the denylisted
+        # word was published verbatim.
+        #
+        # The overlapping result is cut back rather than discarded: a merged
+        # span like "Kalle Kask Phoenixis" must keep protecting the name once
+        # the denylisted word is carved out of it.
+        if denylist_results:
+            kept = []
+            for result in results:
+                clashes = [
+                    d
+                    for d in denylist_results
+                    if result.start < d.end and d.start < result.end
+                ]
+                if clashes:
+                    kept.extend(subtract_spans(result, clashes, text))
+                else:
+                    kept.append(result)
+            results = kept
+
         results.extend(denylist_results)
 
     results.sort(key=lambda x: x.start)

@@ -601,10 +601,32 @@ Endpoint tagastab `results` massiivi, kus iga element vastab ühele sisendteksti
                                 params["masking_char"] = config.get("masking_char", "*")
                                 params["chars_to_mask"] = config.get("chars_to_mask", 4)
                                 params["from_end"] = config.get("from_end", True)
-                            elif operator_type == "redact":
-                                pass  # No parameters needed for redact
+                            elif operator_type == "hash":
+                                # Documented as sha256/sha512/md5. This branch was
+                                # missing, so the parameter was accepted, dropped,
+                                # and Presidio silently applied its own default.
+                                hash_type = config.get("hash_type", "sha256")
+                                if hash_type not in ("sha256", "sha512", "md5"):
+                                    server_instance.api.abort(
+                                        400,
+                                        f"Unsupported hash_type '{hash_type}' for "
+                                        f"{entity_type}: expected sha256, sha512 or md5",
+                                    )
+                                params["hash_type"] = hash_type
+                            elif operator_type in ("redact", "keep"):
+                                pass  # No parameters needed
                             elif operator_type == "encrypt":
                                 params["key"] = config.get("key", "")
+                            else:
+                                # Previously an unknown type fell through to
+                                # OperatorConfig with no params, where Presidio
+                                # quietly treated it as replace.
+                                server_instance.api.abort(
+                                    400,
+                                    f"Unsupported anonymizer type '{operator_type}' for "
+                                    f"{entity_type}: expected replace, mask, redact, "
+                                    f"hash, encrypt or keep",
+                                )
 
                             operators[entity_type] = OperatorConfig(
                                 operator_type, params
@@ -669,6 +691,13 @@ Endpoint tagastab `results` massiivi, kus iga element vastab ühele sisendteksti
 
                     return {"results": results_array}, 200
 
+                except HTTPException:
+                    # api.abort() raises an HTTPException, so a 400 raised by the
+                    # validation above used to be caught below and re-wrapped as a
+                    # 500 that still quoted the original 400. Let the intended
+                    # status through instead - a client has to be able to tell a
+                    # bad request from a server fault.
+                    raise
                 except Exception as e:
                     error_msg = f"Anonymization failed: {str(e)}"
                     logger.error(error_msg)
