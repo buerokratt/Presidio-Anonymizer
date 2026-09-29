@@ -959,4 +959,20 @@ BEHAVIOUR_CASES: list[dict] = [
         "expect_removed": ["2026-09-23", "15:30:00", ":00"],
         "expect_kept": ["Kohtumine toimus ", " kontoris."],
     },
+    {
+        "id": "H12",
+        "group": "H. Span shaping",
+        "desc": "Geocoordinates are anonymised as a location",
+        # A coordinate pins a person down as precisely as a street address.
+        # Two-decimal sums in the same sentence must survive, since decimal
+        # places are the only thing separating them.
+        "payload": {
+            "texts": [
+                "Kohtume koordinaatidel 59.4370, 24.7536 ja arve oli "
+                "15.30, 24.50 eurot."
+            ]
+        },
+        "expect_removed": ["59.4370, 24.7536", "59.4370", "24.7536"],
+        "expect_kept": ["15.30, 24.50 eurot"],
+    },
 ]

@@ -181,6 +181,61 @@ CASES: list[dict[str, Any]] = [
         "text": "Helista +44 7700 900123 või +1 202 555 0147.",
         "expect": {"PHONE_NUMBER": ["+44 7700 900123", "+1 202 555 0147"]},
     },
+    # ------------------------------------------------------------ LOCATION
+    {
+        "name": "coords: decimal pairs are locations",
+        "text": (
+            "asukoha näited on sellised: 59.4370, 24.7536. "
+            "Sydney on -33.8688, 151.2093 ja tihedalt 59.4370,24.7536."
+        ),
+        "expect": {
+            "LOCATION": [
+                "59.4370, 24.7536",
+                "-33.8688, 151.2093",
+                "59.4370,24.7536",
+            ]
+        },
+    },
+    {
+        "name": "coords: degree and DMS forms",
+        "text": (
+            "Punkt 59.4370° N, 24.7536° E ja 59°26'13.2\"N 24°45'13.0\"E "
+            "ja 59°26' N, 24°45' E."
+        ),
+        "expect": {
+            "LOCATION": [
+                "59.4370° N, 24.7536° E",
+                "59°26'13.2\"N 24°45'13.0\"E",
+                "59°26' N, 24°45' E",
+            ]
+        },
+    },
+    {
+        "name": "tricky/coords: two-decimal sums are not coordinates",
+        # The whole discriminator: money and measurements carry two decimal
+        # places, coordinates four or more.
+        "text": "Arve oli 15.30, 24.50 eurot ja kaal 2.50, 3.75 kg.",
+        "expect": {"LOCATION": []},
+    },
+    {
+        "name": "tricky/coords: dates and versions are not coordinates",
+        "text": "Kuupäevad 23.09.2026, 21.09.26, versioon 1.2.3 ja pi 3.14.",
+        "expect": {"LOCATION": []},
+    },
+    {
+        "name": "tricky/coords: out-of-range pairs are not coordinates",
+        # Latitude stops at 90 and longitude at 180, so a pair of large
+        # four-decimal numbers is not silently accepted.
+        "text": "Näidud 91.5000, 24.7536 ja 59.4370, 181.9999.",
+        "expect": {"LOCATION": []},
+    },
+    {
+        "name": "tricky/coords: KNOWN LIMITATION - a four-decimal sum pair",
+        # Nothing separates "2.5000, 3.7500" from a coordinate off the coast
+        # of Ghana. Four decimals on a price is unusual enough to accept.
+        "text": "Mõõdud 2.5000, 3.7500 ühikut.",
+        "expect": {"LOCATION": ["2.5000, 3.7500"]},
+    },
     # ==================================================================
     # Tricky near-misses: text that must NOT be anonymised, and the places
     # where these patterns are known to over-reach. A case marked KNOWN
