@@ -99,7 +99,7 @@ recognizers:
     supported_entity: EST_ID_DOC
     patterns:
       - name: est_id_doc_pattern
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?|\\(]))(AA|AB|AC|EA|EB|EC|N|NA|N|UA|PB|PC|BD|BE|FB|FC|FD|FE|KD|KE|KF|VD|VE|VF|MD|ME|MF|SD|SE|SF|RD|RE|RF|CD|CF)[0-9]{7}(?=[.|,|;|:|\\s|!|?|\\)]|$)"
+        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?|\\(]))(AA|AB|AC|AD|BD|BE|BF|CD|CF|EA|EB|EC|ED|FB|FC|FD|FE|FF|KD|KE|KF|KG|MD|ME|MF|MG|NA|PB|PC|PE|PF|RD|RE|RF|SD|SE|SF|SG|UA|UB|VD|VE|VF|VG)[0-9]{7}(?=[.|,|;|:|\\s|!|?|\\)]|$)"
         score: 0.90
 
   # An Estonian plate is 2-3 digits and 3 uppercase letters. The previous
@@ -114,24 +114,33 @@ recognizers:
         regex: '(?:^|(?<=[\s(,;:]))([0-9]{2,3}\s?(?!EUR|USD|EEK|GBP|SEK|NOK|DKK|PLN|CHF|JPY)[A-ZÕÄÖÜ]{3})(?=[.,;:\s!?)]|$)'
         score: 0.9
 
-  # The country-code group used to be satisfied by digits inside a longer
-  # number, so "49403136515" matched as +49 followed by a local number and an
-  # isikukood was reported as PHONE_NUMBER. Three explicit forms instead:
+  # Two branches, split by how much the prefix already proves.
   #
-  #   +372…/00372…  an explicit prefix, so the separator after the country code
-  #                 is optional - a personal code never carries one
-  #   372 …         a bare country code, which does need a separator, otherwise
-  #                 the leading digits of an isikukood read as one
-  #   5551234       no country code, and then it must not sit mid-number
+  #   +<cc> …              A literal + cannot occur inside a personal code, so
+  #                        once one is present the country code needs no
+  #                        allowlist and the local part may carry separators.
+  #                        This is what the previous eight-country list cost
+  #                        us: "+44 7700 900123" and "+1 202 555 0147" were
+  #                        missed entirely.
   #
-  # The local part is capped at the 7-8 digits Estonian numbers actually have,
-  # so an 11-digit personal code cannot fit under any of the three.
+  #   00<cc>…              The same prefix without the plus, but digits only:
+  #                        allowing spaces here made "0044 0532 0130 00" inside
+  #                        the IBAN "DE89 3704 0044 0532 0130 00" read as a
+  #                        German number. Written-out international numbers use
+  #                        the compact form, so requiring it costs nothing.
+  #
+  #   372 … / 5551234      Bare digits, where an isikukood really can be
+  #                        misread - "49403136515" was once reported as +49
+  #                        plus a local number. Unchanged and still strict: a
+  #                        known country code followed by a separator, or no
+  #                        country code at all, then 7-8 digits that must not
+  #                        sit mid-number.
   - name: EstonianPhoneNumbers
     supported_language: xx
     supported_entity: PHONE_NUMBER
     patterns:
       - name: phone_number_pattern
-        regex: '(?:^|(?<=[\s(,;:]))(?:(?:\+|00)\s?(?:372|358|359|44|46|49|52|79)[\s)\-]?\s?|(?:372|358|359|44|46|49|52|79)[\s)\-]\s?|(?<![0-9]))[45678][0-9\s\-]{5,8}[0-9](?![0-9])(?!\s?[0-9]{4})(?=[.,;:\s!?)]|$)'
+        regex: '(?:^|(?<=[\s(,;:]))(?:\+\s?[1-9][0-9]{0,2}[\s)\-]?\s?[0-9][0-9\s\-]{4,13}[0-9]|00[1-9][0-9]{5,13}|(?:(?:372|358|359|44|46|49|52|79)[\s)\-]\s?|(?<![0-9]))[45678][0-9\s\-]{5,8}[0-9](?!\s?[0-9]{4}))(?![0-9])(?=[.,;:\s!?)]|$)'
         score: 0.9
   
   - name: IBANCode
@@ -161,21 +170,41 @@ recognizers:
         regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))(0[1-9]|[12][0-9]|3[01])[.\\-/](0[1-9]|1[0-2])[.\\-/]([0-9]{4}|[0-9]{2})(?=[.|,|;|:|\\s|!|?]|$)"
         score: 0.9
       - name: date_pattern_2
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))(0[1-9]|[12][0-9]|3[01])[ ](jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)[ ]([0-9]{4}|[0-9]{2})(?=[.|,|;|:|\\s|!|?]|$)"
+        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))(0?[1-9]|[12][0-9]|3[01])\\.?[ ](jaanuar|veebruar|märts|aprill|mai|juuni|juuli|august|september|oktoober|november|detsember)[ ]([0-9]{4}|[0-9]{2})(?=[.|,|;|:|\\s|!|?]|$)"
         score: 0.9
       - name: date_pattern_3
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))(0[1-9]|[12][0-9]|3[01])[ ](jaanuaril|veebruaril|märtsil|aprillil|mail|juunil|juulil|augustil|septembril|oktoobril|novembril|detsembril)[ ]([0-9]{4}|[0-9]{2})(?=[.|,|;|:|\\s|!|?]|$)"
+        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))(0?[1-9]|[12][0-9]|3[01])\\.?[ ](jaanuaril|veebruaril|märtsil|aprillil|mail|juunil|juulil|augustil|septembril|oktoobril|novembril|detsembril)[ ]([0-9]{4}|[0-9]{2})(?=[.|,|;|:|\\s|!|?]|$)"
+        score: 0.9
+      - name: iso_date_pattern
+        regex: '(?:^|(?<=[\s(,;:]))(19|20)[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?=[.,;:\s!?)]|$)'
         score: 0.9
       - name: time_pattern
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))([01]?[0-9]|2[0-3]):[0-5][0-9](?=[.|,|;|:|\\s|!|?]|$)"
+        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?(?=[.|,|;|:|\\s|!|?]|$)"
         score: 0.9
 
+  # Presidio's built-in CryptoRecognizer matches Bitcoin only (bc1/1/3)
+  # and validates the checksum, so Ethereum addresses were never reported
+  # at all. 0x plus exactly 40 hex digits; the length is what keeps this
+  # from matching arbitrary hex strings.
+  - name: EthereumWallet
+    supported_language: xx
+    supported_entity: CRYPTO
+    patterns:
+      - name: ethereum_pattern
+        regex: '(?:^|(?<=[\s(,;:]))0x[a-fA-F0-9]{40}(?=[.,;:\s!?)]|$)'
+        score: 0.9
+
+  # Attachments are named like hosts: "aruanne.pdf" has the shape of a
+  # domain, and replacing a filename with [VEEBILEHT] destroys meaning
+  # without protecting anything. Only extensions that are not also real
+  # TLDs are excluded - .py, .sh, .io and .zip stay matchable, because
+  # those are live top-level domains.
   - name: WebSite
     supported_language: xx
     supported_entity: URL
     patterns:
       - name: url_pattern
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))((http|https):\\/\\/)?[a-zA-Z0-9\\-]+(\\.[a-zA-Z]{2,})+(\\/\\S*)?(?=[.|,|;|:|\\s|!|?]|$)"
+        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))(?![a-zA-Z0-9\\-]+\\.(?:pdf|docx?|xlsx?|pptx?|txt|csv|jpe?g|png|gif|bmp|svg|mp3|mp4|avi|rar|exe)(?=[.,;:\\s!?)]|$))((http|https):\\/\\/)?[a-zA-Z0-9\\-]+(\\.[a-zA-Z]{2,})+(\\/(?:[^\\s]*[^\\s.,;:!?)])?)?(?=[.|,|;|:|\\s|!|?|\\)]|$)"
         score: 0.9
 
   # Presidio's built-in IpRecognizer scores 0.6, below default_score_threshold,
