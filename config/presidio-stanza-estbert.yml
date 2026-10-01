@@ -78,7 +78,7 @@ recognizers:
       # Uppercase-only with a currency exclusion list, so a money amount such as
       # "500 EUR" is not read as a registration number. See the spacy config.
       - name: car_number_pattern
-        regex: '(?:^|(?<=[\s(,;:]))([0-9]{2,3}\s?(?!EUR|USD|EEK|GBP|SEK|NOK|DKK|PLN|CHF|JPY)[A-ZÕÄÖÜ]{3})(?=[.,;:\s!?)]|$)'
+        regex: '(?:^|(?<=[\s(,;:]))([0-9]{2,3}\s?(?!EUR|USD|EEK|GBP|SEK|NOK|DKK|PLN|CHF|JPY|MIN|MLN)[A-ZÕÄÖÜ]{3})(?=[.,;:\s!?)]|$)'
         score: 0.85
 
   - name: EstonianPhoneNumbers 

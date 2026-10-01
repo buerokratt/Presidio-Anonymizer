@@ -975,4 +975,22 @@ BEHAVIOUR_CASES: list[dict] = [
         "expect_removed": ["59.4370, 24.7536", "59.4370", "24.7536"],
         "expect_kept": ["15.30, 24.50 eurot"],
     },
+    {
+        "id": "H13",
+        "group": "H. Span shaping",
+        "desc": "A lower-case plate is caught, a duration is not",
+        # Presidio compiles patterns with IGNORECASE, so the plate pattern
+        # reaches lower-case text whether or not it looks like it does. That
+        # is wanted for "123 abc" and not for "15 min".
+        #
+        # Asserted as removed/kept rather than by placeholder on purpose: with
+        # ORGANIZATION in play the model claims this span and "123 abc" comes
+        # back as [ORGANISATSIOON], not [AUTONUMBER]. Requesting CAR_NUMBER
+        # alone gives [AUTONUMBER], so the pattern is right and the typing is
+        # decided by overlap priority between a model span and a pattern span.
+        # Nothing leaks either way.
+        "payload": {"texts": ["Ootasin 15 min ja nägin autot 123 abc."]},
+        "expect_removed": ["123 abc"],
+        "expect_kept": ["15 min"],
+    },
 ]
