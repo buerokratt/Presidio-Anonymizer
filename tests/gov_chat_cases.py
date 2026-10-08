@@ -993,4 +993,15 @@ BEHAVIOUR_CASES: list[dict] = [
         "expect_removed": ["123 abc"],
         "expect_kept": ["15 min"],
     },
+    {
+        "id": "H14",
+        "group": "H. Span shaping",
+        "desc": "A multi-word name the model split is anonymised whole",
+        # The model labels "New" and "Yorki" as separate GPE spans with
+        # different scores; filtering them separately dropped the weaker one
+        # and left half the name in clear text. Both halves must go.
+        "payload": {"texts": ["Ta kolis New Yorki ja enne seda elas Tallinnas."]},
+        "expect_removed": ["New York", "Yorki", "New"],
+        "expect_kept": ["Ta kolis ", " ja enne seda elas "],
+    },
 ]

@@ -335,6 +335,97 @@ class EstBERTRecognizerONNX(EntityRecognizer):
                 spans.append((piece_start, piece_end))
         return spans
 
+    @staticmethod
+    def _straddles(start: int, end: int, others: List[RecognizerResult]) -> bool:
+        """True if [start, end) partly overlaps any of `others`.
+
+        Disjoint is fine and so is full containment either way round; only a
+        partial overlap is a problem, because the anonymizer has no rule for it
+        and emits both spans.
+        """
+        for other in others:
+            if other.end <= start or end <= other.start:
+                continue
+            if start <= other.start and other.end <= end:
+                continue
+            if other.start <= start and end <= other.end:
+                continue
+            return True
+        return False
+
+    @classmethod
+    def _merge_adjacent_spans(
+        cls, text: str, results: List[RecognizerResult]
+    ) -> List[RecognizerResult]:
+        """Join same-type spans separated only by spaces, keeping the best score.
+
+        The model labels a multi-word name one word at a time often enough that
+        "New Yorki" comes back as GPE("New") and GPE("Yorki") scored
+        separately. Filtering them separately drops whichever falls below the
+        threshold and leaves that half of the name in clear text - the defect
+        this issue was opened for, still reachable for names the model has weak
+        evidence for.
+
+        Merging before the filter is what makes the scores agree with the
+        output. AnonymizerEngine already rewrites same-type spans separated by
+        spaces as one placeholder, so by the time the text is produced the
+        pipeline has treated them as a single entity regardless; only the
+        threshold filter was treating them as two. The merged span takes the
+        higher score, so strong evidence for one word carries the rest of the
+        name.
+
+        A merge is abandoned when the result would half-cover some other span.
+        Presidio resolves one span containing another, but not two that only
+        partly overlap: it writes both, and the shared characters come out
+        twice. The model does emit spans that sit inside each other - a
+        one-letter LOCATION fragment inside a GPE, say - and absorbing the
+        fragment into its neighbour is what turns containment into a partial
+        overlap.
+
+        A merged span that turns out to be plate-shaped is dropped, for the
+        same reason _normalize_span() drops one: a registration number is not
+        an organisation name, and the model outscores the CAR_NUMBER pattern.
+
+        The gap has to be spaces alone, which is the anonymizer's own rule.
+        That is also what keeps a deliberate split from being undone:
+        _normalize_span cuts at commas, sentence ends and newlines, so its
+        pieces are never separated by spaces alone.
+        """
+        if not results:
+            return results
+
+        ordered = sorted(results, key=lambda r: (r.start, r.end))
+        merged = [ordered[0]]
+        for index, current in enumerate(ordered[1:], start=1):
+            previous = merged[-1]
+            gap = text[previous.end : current.start]
+            others = [
+                other
+                for position, other in enumerate(ordered)
+                if other is not current and position != index and other is not previous
+            ]
+            if (
+                current.entity_type == previous.entity_type
+                and previous.end <= current.start
+                and gap != ""
+                and gap.strip(" ") == ""
+                and not cls._straddles(previous.start, current.end, others)
+            ):
+                previous.end = current.end
+                previous.score = max(previous.score, current.score)
+            else:
+                merged.append(current)
+
+        # The plate guard has to run again here. _normalize_span() drops a piece
+        # that is a plate, but the model splits "45 XYZ" into "45" and "XYZ",
+        # and neither half is plate-shaped on its own - so the guard passed them
+        # and this merge put them back together as one ORGANIZATION.
+        return [
+            span
+            for span in merged
+            if not cls.PLATE_SHAPE.fullmatch(text[span.start : span.end])
+        ]
+
     def analyze(
         self, text: str, entities: List[str], nlp_artifacts: NlpArtifacts | None = None
     ) -> List[RecognizerResult]:
@@ -392,7 +483,7 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         except Exception as e:
             logger.error(f"Error in EstBERT ONNX analysis: {e}")
 
-        return results
+        return self._merge_adjacent_spans(text, results)
 
 
 class DenylistRecognizer(EntityRecognizer):
