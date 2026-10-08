@@ -55,12 +55,16 @@ entities_to_detect:
 # Custom Estonian recognizers (pattern-based)
 recognizers:
   # Estonian Personal ID (Isikukood)
+  # The first digit carries sex and century: 1-2 for 1800s, 3-4 for 1900s,
+  # 5-6 for 2000s, 7-8 for 2100s. All eight are defined by the standard, so
+  # all eight are matched, even though nobody carrying a 7 or an 8 has been
+  # born yet.
   - name: EstonianPersonalCode
     supported_language: et
     supported_entity: EE_PERSONAL_CODE
     patterns:
       - name: isikukood_pattern
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))[1-6][0-9]{2}(01|02|03|04|05|06|07|08|09|10|11|12)(01|02|03|04|05|06|07|08|09|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)[0-9]{3}[0-9](?=[.|,|;|:|\\s|!|?]|$)"
+        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))[1-8][0-9]{2}(01|02|03|04|05|06|07|08|09|10|11|12)(01|02|03|04|05|06|07|08|09|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31)[0-9]{3}[0-9](?=[.|,|;|:|\\s|!|?]|$)"
         score: 0.95
 
   - name: EstonianDocumentNumber
@@ -91,24 +95,17 @@ recognizers:
         regex: '(?:^|(?<=[\s(,;:]))(?:\+\s?[1-9][0-9]{0,2}[\s)\-]?\s?[0-9][0-9\s\-]{4,13}[0-9]|00[1-9][0-9]{5,13}|(?:(?:372|358|359|44|46|49|52|79)[\s)\-]\s?|(?<![0-9]))[45678][0-9\s\-]{5,8}[0-9](?!\s?[0-9]{4}))(?![0-9])(?=[.,;:\s!?)]|$)'
         score: 0.85
   
-  - name: IBANCode
-    supported_language: et
-    supported_entity: IBAN_CODE
-    patterns:
-      - name: iban_pattern
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))[A-Za-z]{2}[0-9]{18,}(?=[.|,|;|:|\\s|!|?]|$)"
-        score: 0.85
-  
-  - name: CreditCard 
-    supported_language: et
-    supported_entity: CREDIT_CARD
-    patterns:
-      - name: credit_card_pattern
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))(5018|5020|5038|5612|5893|6304|6759|6761|6762|6763|0604|6390|6759)\\s?[0-9]{4}\\s?[0-9]{4}\\s?[0-9]{4}(?=[.|,|;|:|\\s|!|?]|$)"
-        score: 0.85
-      - name: credit_card_pattern_2
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))[0-9]{4}\\s?[0-9]{4}\\s?[0-9]{4}\\s?[0-9]{4}(?=[.|,|;|:|\\s|!|?]|$)"
-        score: 0.85
+  # IBAN_CODE and CREDIT_CARD are left to Presidio's built-in recognizers.
+  # The patterns that used to be here described the same shapes without the
+  # checks: IbanRecognizer verifies mod-97 and CreditCardRecognizer verifies
+  # Luhn, and both score a verified match 1.0 and an unverified one 0. Ours
+  # scored every four-digit run 0.9, which is how a credit-card match appeared
+  # inside an account number and cut a verified IBAN into
+  # "[PANGAKONTO] [PANGAKAART]".
+  #
+  # Every card and IBAN in the gold suite and in the acceptance-test input is
+  # checksum-valid, so nothing real is lost. What is lost is detection of
+  # card-shaped numbers that are not cards.
 
   - name: DateTime 
     supported_language: et

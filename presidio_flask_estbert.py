@@ -9,7 +9,7 @@ from presidio_analyzer import (
 )
 from presidio_analyzer.nlp_engine import NlpArtifacts, NlpEngineProvider
 from presidio_analyzer.entity_recognizer import EntityRecognizer
-from typing import List, Optional
+from typing import Callable, List, Optional
 import logging
 import os
 import re
@@ -765,6 +765,69 @@ def subtract_spans(
     return trimmed
 
 
+def validate_ee_personal_code(text: str) -> bool:
+    """Check an isikukood's mod-11 check digit.
+
+    The regex can only describe the shape - eleven digits, a first digit of
+    1-8, a month of 01-12 and a day of 01-31 - which leaves "39001010001"
+    looking exactly like a real code. It is not one: the check digit is the
+    thing that decides, and the standard defines nothing else to verify.
+
+    An earlier version also required the birth date to be a real calendar date,
+    which rejected the 30th of February. That is stricter than the standard,
+    which specifies only 01-31 for the day, and strictness in that direction is
+    the dangerous one here: a real code with an odd date would go unanonymised.
+    It also earned nothing - every impossible date to hand fails the check digit
+    anyway.
+
+    The algorithm cannot catch every single-digit error: 51107121760 and
+    61107121760 differ by one digit and both verify. That is a known flaw in
+    the published method, so both are accepted here too.
+    """
+    if len(text) != 11 or not text.isdigit():
+        return False
+
+    digits = [int(character) for character in text]
+    if not 1 <= digits[0] <= 8:
+        return False
+
+    # The published algorithm: weight the first ten digits, take modulo 11, and
+    # if that lands on 10, weight them again on the second scale. A second 10
+    # becomes 0.
+    first = (1, 2, 3, 4, 5, 6, 7, 8, 9, 1)
+    second = (3, 4, 5, 6, 7, 8, 9, 1, 2, 3)
+    remainder = sum(d * w for d, w in zip(digits[:10], first, strict=True)) % 11
+    if remainder == 10:
+        remainder = sum(d * w for d, w in zip(digits[:10], second, strict=True)) % 11
+        if remainder == 10:
+            remainder = 0
+    return remainder == digits[10]
+
+
+# Validators a YAML recognizer can ask for by name, with `validator:`. A
+# pattern describes a shape; a validator decides whether that shape is a real
+# identifier, which is the one thing a regex cannot do.
+VALIDATORS: dict[str, Callable[[str], bool]] = {
+    "ee_personal_code": validate_ee_personal_code,
+}
+
+
+class ValidatingPatternRecognizer(PatternRecognizer):
+    """A PatternRecognizer that checks its matches before reporting them.
+
+    Presidio scores a validated match 1.0 and an invalidated one 0, so a
+    shape-only match disappears instead of being reported with the pattern's
+    nominal confidence.
+    """
+
+    def __init__(self, validator: Callable[[str], bool], **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._validator = validator
+
+    def validate_result(self, pattern_text: str) -> bool:
+        return self._validator(pattern_text)
+
+
 def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecognizer]:
     """Create pattern-based recognizers from configuration"""
     recognizers = []
@@ -789,12 +852,29 @@ def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecog
                 )
                 patterns.append(pattern)
 
-            recognizer = PatternRecognizer(
-                supported_entity=supported_entity,
-                patterns=patterns,
-                name=name,
-                supported_language=language,
-            )
+            validator_name = rec_config.get("validator")
+            validator = VALIDATORS.get(validator_name) if validator_name else None
+            if validator_name and validator is None:
+                logger.error(
+                    f"  Unknown validator '{validator_name}' for {name}; "
+                    f"reporting matches unvalidated"
+                )
+
+            if validator is not None:
+                recognizer = ValidatingPatternRecognizer(
+                    validator=validator,
+                    supported_entity=supported_entity,
+                    patterns=patterns,
+                    name=name,
+                    supported_language=language,
+                )
+            else:
+                recognizer = PatternRecognizer(
+                    supported_entity=supported_entity,
+                    patterns=patterns,
+                    name=name,
+                    supported_language=language,
+                )
             recognizers.append(recognizer)
             logger.info(f"  ✓ Created: {name} for {supported_entity}")
 

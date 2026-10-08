@@ -177,14 +177,14 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "name": "phone: the card-number overlap is known and shadowed",
-        # Pre-existing, and unchanged by the international-format work: the
-        # first two groups of a 16-digit card also fit the bare local-number
-        # branch. It costs nothing because CREDIT_CARD covers the whole number
-        # and outranks it, but the case is here so it cannot quietly get worse.
+        # The first two groups of a 16-digit card also fit the bare
+        # local-number branch. CREDIT_CARD is no longer matched here at all -
+        # Presidio's built-in owns it, with a Luhn check this file cannot see -
+        # so the expectation is only that the phone overlap does not grow.
         "text": "Kaart 4242 4242 4242 4242.",
         "expect": {
             "PHONE_NUMBER": ["4242 4242"],
-            "CREDIT_CARD": ["4242 4242 4242 4242"],
+            "CREDIT_CARD": [],
         },
     },
     {
@@ -354,9 +354,10 @@ CASES: list[dict[str, Any]] = [
         "expect": {"CAR_NUMBER": ["45 KMH", "20 KGF", "123 ABC"]},
     },
     {
-        "name": "tricky/isikukood: an 11-digit number with a wrong century digit",
-        # The first digit encodes century and sex and only runs 1-6.
-        "text": "Number 79001010000 ei ole isikukood, 39001010000 on.",
+        "name": "tricky/isikukood: an 11-digit number with a first digit outside 1-8",
+        # The first digit encodes sex and century and runs 1-8: 1-2 for the
+        # 1800s through to 7-8 for the 2100s. 9 is not a thing.
+        "text": "Number 99001010000 ei ole isikukood, 39001010000 on.",
         "expect": {"EE_PERSONAL_CODE": ["39001010000"]},
     },
     # ==================================================================
