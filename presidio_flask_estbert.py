@@ -84,15 +84,33 @@ class EstBERTRecognizerONNX(EntityRecognizer):
     WINDOW_OVERLAP_TOKENS = 50
 
     # An Estonian registration plate, which the CAR_NUMBER recognizer owns.
-    PLATE_SHAPE = re.compile(r"[0-9]{2,3}\s?[A-ZÕÄÖÜ]{3}")
+    # IGNORECASE to match the CAR_NUMBER pattern this defends: Presidio
+    # compiles that one case-insensitively, so without the flag here a
+    # lower-case plate slipped past the guard and was reported as an
+    # organisation.
+    RECOGNIZER_NAME = "EstBERT_NER_ONNX_Recognizer"
+
+    PLATE_SHAPE = re.compile(r"[0-9]{2,3}\s?[A-ZÕÄÖÜ]{3}", re.IGNORECASE)
+
+    DEFAULT_LABEL_MAPPING = {
+        "PER": "PERSON",
+        "ORG": "ORGANIZATION",
+        "LOC": "LOCATION",
+        "GPE": "GPE",
+        "DATE": "DATE_TIME",
+        "TIME": "DATE_TIME",
+    }
 
     def __init__(
-        self, model_name: str = "tartuNLP/EstBERT_NER", supported_language: str = "xx"
+        self,
+        model_name: str = "tartuNLP/EstBERT_NER",
+        supported_language: str = "xx",
+        label_mapping: Optional[dict[str, str]] = None,
     ) -> None:
         super().__init__(
             supported_entities=self.ENTITIES,
             supported_language=supported_language,
-            name="EstBERT_NER_ONNX_Recognizer",
+            name=self.RECOGNIZER_NAME,
         )
 
         logger.info(f"Loading EstBERT model with ONNX optimization: {model_name}")
@@ -151,14 +169,11 @@ class EstBERTRecognizerONNX(EntityRecognizer):
                 device=-1,  # CPU
             )
 
-            self.label_mapping = {
-                "PER": "PERSON",
-                "ORG": "ORGANIZATION",
-                "LOC": "LOCATION",
-                "GPE": "GPE",
-                "DATE": "DATE_TIME",
-                "TIME": "DATE_TIME",
-            }
+            # estbert_configuration.entity_mapping in the YAML was never read:
+            # this mapping was hardcoded, so the config key looked live and was
+            # not. The config now wins, and the hardcoded table is the fallback
+            # for a config that omits it.
+            self.label_mapping = dict(label_mapping or self.DEFAULT_LABEL_MAPPING)
 
             logger.info(
                 f"EstBERT ONNX recognizer initialized for language: {supported_language}"
@@ -612,6 +627,77 @@ def apply_allowlist(
     return filtered_results
 
 
+def is_pattern_result(result: RecognizerResult) -> bool:
+    """True if one of the YAML pattern recognizers produced this result."""
+    source = (result.recognition_metadata or {}).get(
+        RecognizerResult.RECOGNIZER_NAME_KEY
+    )
+    return source in pattern_recognizer_names
+
+
+def is_model_result(result: RecognizerResult) -> bool:
+    """True if the NER model produced this result."""
+    source = (result.recognition_metadata or {}).get(
+        RecognizerResult.RECOGNIZER_NAME_KEY
+    )
+    return source == EstBERTRecognizerONNX.RECOGNIZER_NAME
+
+
+def apply_pattern_precedence(
+    results: List[RecognizerResult], text: str
+) -> List[RecognizerResult]:
+    """Let a pattern own the text it matched when a model span overlaps it.
+
+    A pattern match is deterministic; a model span is a guess. Left to compete
+    on score the model wins every time - it labels confidently enough to
+    outrank any score a pattern can carry - so "123 abc" came back as
+    [ORGANISATSIOON] rather than [AUTONUMBER], and "err.ee/uudised?id=12" as an
+    organisation rather than a URL. Nothing leaked in either case; the
+    placeholder was simply wrong, which is still a defect to anyone reading the
+    output.
+
+    The model span is cut back rather than discarded, the same way a denylist
+    match is carved out of one: a span over "Auto 123 ABC" still has "Auto" to
+    report once the plate is taken out of it.
+
+    Only a clash of different types counts. Two spans of the same type are a
+    duplicate, not a mislabel, and Presidio already settles those.
+
+    The model's spans yield to every other recognizer, Presidio's built-ins
+    included - those are deterministic too, and the validated ones (IBAN by
+    mod-97, cards by Luhn, e-mail by its TLD check) are better evidence than
+    anything here. Leaving them out was not an option either: a model span
+    reading "Konto EE38" half-covers the IBAN beside it, and a partial overlap
+    makes the anonymizer write both spans, so the text came back with "EE38"
+    in it twice.
+
+    What never happens is the reverse - one of our patterns carving a
+    built-in. Cutting our unvalidated card pattern out of a verified IBAN
+    split one account number into "[PANGAKONTO] [PANGAKAART]".
+    """
+    blockers = [result for result in results if not is_model_result(result)]
+    if not blockers:
+        return results
+
+    kept: List[RecognizerResult] = []
+    for result in results:
+        if not is_model_result(result):
+            kept.append(result)
+            continue
+        clashes = [
+            blocker
+            for blocker in blockers
+            if blocker.entity_type != result.entity_type
+            and result.start < blocker.end
+            and blocker.start < result.end
+        ]
+        if clashes:
+            kept.extend(subtract_spans(result, clashes, text))
+        else:
+            kept.append(result)
+    return kept
+
+
 def apply_score_thresholds(
     results: List[RecognizerResult], text: str
 ) -> List[RecognizerResult]:
@@ -622,10 +708,7 @@ def apply_score_thresholds(
     """
     kept = []
     for result in results:
-        source = (result.recognition_metadata or {}).get(
-            RecognizerResult.RECOGNIZER_NAME_KEY
-        )
-        if source in pattern_recognizer_names:
+        if is_pattern_result(result):
             kept.append(result)
             continue
 
@@ -796,7 +879,9 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
             estbert_config = config.get("estbert_configuration", {})
             model_name = estbert_config.get("model_name", "tartuNLP/EstBERT_NER")
             estbert_recognizer = EstBERTRecognizerONNX(
-                model_name=model_name, supported_language=lang
+                model_name=model_name,
+                supported_language=lang,
+                label_mapping=estbert_config.get("entity_mapping"),
             )
             analyzer.registry.add_recognizer(estbert_recognizer)
             logger.info("  EstBERT ONNX recognizer added")
@@ -874,6 +959,7 @@ def analyze_with_lists(
             correlation_id=correlation_id,
         )
         results = apply_score_thresholds(results, text)
+        results = apply_pattern_precedence(results, text)
         logger.info(f"  Found {len(results)} entities")
     except Exception as e:
         logger.error(f"  Analysis failed: {e}", exc_info=True)
