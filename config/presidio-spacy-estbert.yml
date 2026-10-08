@@ -14,6 +14,18 @@ default_score_threshold: 0.83
 # score ~0.98, so they are not what this threshold controls.
 entity_score_thresholds:
   ORGANIZATION: 0.45
+  # Swept 0.83 / 0.70 / 0.60 / 0.50 / 0.40 / 0.30 against the chat-NER test
+  # set. 0.60 is the best value measured on every axis: GPE F1 0.7536 against
+  # 0.7385 at the old 0.83, recall 0.7222 against 0.6667, and overall micro F1
+  # 0.8792 against 0.8774 - lowering this cut improves the whole pipeline, not
+  # just GPE. It is also the point at which "New York" at the end of a bare
+  # list is caught; at 0.83 both halves of the name scored under the cut.
+  #
+  # 0.40 and below is unusable: the evaluation aborts because a `keep`
+  # operator no longer returns the text unchanged, which is the overlapping
+  # span defect - enough weak spans survive to produce partial overlaps that
+  # the anonymizer cannot resolve, and it duplicates characters.
+  GPE: 0.60
 
 # Spacy NLP Engine Configuration
 nlp_configuration:
