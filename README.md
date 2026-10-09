@@ -330,11 +330,15 @@ entities_to_detect:
   - EE_PERSONAL_CODE
   # ...
 
-# Pattern recognizers
+# Pattern recognizers. `validator:` is optional and names a check from
+# VALIDATORS in presidio_flask_estbert.py; a match that fails it is discarded
+# rather than reported. Currently only `ee_personal_code` exists, and no
+# shipped config switches it on - see Validators below.
 recognizers:
   - name: EstonianPersonalCode
     supported_language: xx
     supported_entity: EE_PERSONAL_CODE
+    # validator: ee_personal_code
     patterns:
       - name: isikukood_pattern
         regex: "..."
@@ -354,8 +358,24 @@ anonymization_config:
 The NER model and the Presidio built-in recognizers produce real confidence scores, so their results are
 filtered against `entity_score_thresholds`, falling back to `default_score_threshold`. A regex pattern either
 matches or it does not, so results from the `recognizers:` patterns are **never** dropped for their score —
-if a pattern over-matches, fix the regex. Pattern scores still matter when two detections overlap: Presidio
-keeps the higher-scored one.
+if a pattern over-matches, fix the regex.
+
+### Overlapping detections
+
+Three rules decide who owns a piece of text, applied in this order:
+
+* A **pattern beats the NER model**. A pattern either matched or it did not; a model span is a guess, and
+  the model scores confidently enough to win on score alone. Where the two overlap and disagree on the
+  entity type, the model's span is cut back rather than dropped — a model span over `Auto 123 ABC` keeps
+  `Auto` once the plate is carved out of it, and the plate is reported as `CAR_NUMBER`, not
+  `ORGANIZATION`. Presidio's own built-ins count as patterns here: they are deterministic too, and the
+  validated ones are better evidence than any regex in the config.
+* **Model spans separated only by spaces are merged** before the score filter, taking the higher score, so
+  a name the model labelled one word at a time is not half dropped. `New Yorki` used to come back as
+  `[GPE] Yorki`.
+* A **denylist match wins everything** — see [Allowlist and denylist](#allowlist-and-denylist).
+
+Scores still break ties between detections that none of these cover: Presidio keeps the higher-scored one.
 
 ### Model label mapping
 
@@ -363,6 +383,24 @@ The NER model's labels are mapped to Presidio entities by `estbert_configuration
 config. When that key is absent the recognizer falls back to its own table: `PER→PERSON`,
 `ORG→ORGANIZATION`, `LOC→LOCATION`, `GPE→GPE`, `DATE`/`TIME→DATE_TIME`. Both shipped configs declare a
 mapping that matches the fallback.
+
+### Validators
+
+A pattern says what text looks like; a validator says whether it is real. A recognizer can name one with
+`validator:`, and Presidio then scores a verified match 1.0 and discards one that fails, so a shape-only
+match is not reported at the pattern's nominal confidence.
+
+| Validator | Checks |
+|---|---|
+| `ee_personal_code` | The isikukood mod-11 check digit, and a first digit in 1-8 |
+
+`IBAN_CODE` and `CREDIT_CARD` are not defined as patterns in the config at all: Presidio's own recognizers
+own them and verify mod-97 and Luhn respectively. A card-shaped number that fails Luhn is therefore not
+anonymized, which is deliberate.
+
+**`ee_personal_code` is not enabled in either shipped config.** Turning it on rejects personal codes with an
+invalid check digit — which is correct, but invented test data usually has one, so enable it together with
+test fixtures that use checksum-valid codes.
 
 ## Docker deployment
 
