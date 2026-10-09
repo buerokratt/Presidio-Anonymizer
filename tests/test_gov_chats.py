@@ -523,7 +523,22 @@ def main() -> int:
             )
         print(f"\nraw results -> {args.json_path}")
 
-    return 0 if all(r["passed"] for r in behaviour_results) else 1
+    # A `keep` operator that does not return the text unchanged means the
+    # pipeline produced spans the anonymizer could not resolve - partially
+    # overlapping ones make it write both and duplicate the shared characters.
+    # That is corruption of the user's text, not a detection-quality question,
+    # so it fails the run rather than printing a note among the metrics.
+    corrupted = [
+        r["id"] for r in detection_results if not r.get("text_unchanged", True)
+    ]
+    if corrupted:
+        print(
+            f"\nFAIL: `keep` rewrote the text in {len(corrupted)} case(s): "
+            f"{', '.join(corrupted)}"
+        )
+
+    behaviour_ok = all(r["passed"] for r in behaviour_results)
+    return 0 if behaviour_ok and not corrupted else 1
 
 
 if __name__ == "__main__":
