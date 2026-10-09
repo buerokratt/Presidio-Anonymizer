@@ -37,13 +37,37 @@ ABBREVIATIONS = frozenset(
     }
 )
 
-# Per-entity score thresholds read from the config. AnalyzerEngine only supports
-# one threshold for everything, so the engine is built with the lowest threshold
-# in play and apply_score_thresholds() does the real per-entity filtering. The
-# app builds exactly one analyzer per process, so these live at module level
-# instead of being threaded through every call site.
+# Score thresholds. AnalyzerEngine supports one threshold for everything, which
+# is the wrong shape for this pipeline: the NER model emits real probabilities,
+# while a YAML pattern carries a constant its author typed. Comparing the two
+# against one cut is what made a pattern silently unreachable whenever its
+# score sat below the threshold - IP_ADDRESS was listed as a supported entity
+# for months without ever being reportable, and eleven patterns in the stanza
+# config are in that state today.
+#
+# So the engine threshold is 0 and all filtering happens in
+# apply_score_thresholds():
+#
+#   pattern recognizers from the YAML   never filtered. A regex either matches
+#                                       or it does not; there is no confidence
+#                                       to weigh. If a pattern is not trusted,
+#                                       the fix is the pattern, not a number
+#                                       that quietly disables it.
+#   everything else                     filtered per entity, falling back to
+#                                       default_score_threshold. This is where
+#                                       a score means something: the model's
+#                                       own confidence, and the validated
+#                                       built-ins, which score 1.0 when their
+#                                       checksum passes and 0 when it fails.
+#
+# Pattern scores still matter for conflict resolution, where Presidio prefers
+# the higher-scored of two overlapping spans.
+#
+# The app builds exactly one analyzer per process, so these live at module
+# level instead of being threaded through every call site.
 entity_score_thresholds: dict[str, float] = {}
 default_score_threshold: float = 0.8
+pattern_recognizer_names: set[str] = set()
 
 
 class EstBERTRecognizerONNX(EntityRecognizer):
@@ -500,9 +524,20 @@ def apply_allowlist(
 def apply_score_thresholds(
     results: List[RecognizerResult], text: str
 ) -> List[RecognizerResult]:
-    """Drop results below the threshold configured for their entity type."""
+    """Drop results below the threshold configured for their entity type.
+
+    Results produced by the YAML pattern recognizers are exempt - see the note
+    on the threshold globals above.
+    """
     kept = []
     for result in results:
+        source = (result.recognition_metadata or {}).get(
+            RecognizerResult.RECOGNIZER_NAME_KEY
+        )
+        if source in pattern_recognizer_names:
+            kept.append(result)
+            continue
+
         threshold = entity_score_thresholds.get(
             result.entity_type, default_score_threshold
         )
@@ -619,19 +654,20 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
         logger.error(f"✗ NLP engine creation failed: {e}")
         raise
 
-    # Score thresholds. The engine gets the lowest threshold any entity uses so
-    # it cannot pre-filter a result that an entity-specific threshold would still
-    # admit; apply_score_thresholds() then filters per entity.
-    global entity_score_thresholds, default_score_threshold
+    # Score thresholds. The engine itself filters nothing: it would apply one
+    # cut to model spans and pattern matches alike, and it runs before
+    # apply_score_thresholds() can tell them apart.
+    global entity_score_thresholds, default_score_threshold, pattern_recognizer_names
     default_score_threshold = float(config.get("default_score_threshold", 0.8))
     entity_score_thresholds = {
         str(entity): float(score)
         for entity, score in (config.get("entity_score_thresholds") or {}).items()
     }
-    engine_threshold = min([default_score_threshold, *entity_score_thresholds.values()])
+    pattern_recognizer_names = set()
     logger.info(
         f"Score thresholds: default {default_score_threshold}, "
-        f"per-entity {entity_score_thresholds or 'none'}, engine {engine_threshold}"
+        f"per-entity {entity_score_thresholds or 'none'}, "
+        f"patterns exempt, engine 0"
     )
 
     # Create analyzer
@@ -639,7 +675,7 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
     analyzer = AnalyzerEngine(
         nlp_engine=nlp_engine,
         supported_languages=supported_languages,
-        default_score_threshold=engine_threshold,
+        default_score_threshold=0.0,
     )
     logger.info(" AnalyzerEngine created")
 
@@ -681,6 +717,7 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
             pattern_recognizers = create_pattern_recognizers(config, lang)
             for recognizer in pattern_recognizers:
                 analyzer.registry.add_recognizer(recognizer)
+                pattern_recognizer_names.add(recognizer.name)
             logger.info(f"  ✓ {len(pattern_recognizers)} pattern recognizers added")
         except Exception as e:
             logger.error(f"  ✗ Pattern recognizers failed: {e}")

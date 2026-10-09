@@ -884,4 +884,95 @@ BEHAVIOUR_CASES: list[dict] = [
             "+372 5555 5555",
         ],
     },
+    # ------------------------------------------------------------------
+    # H07-H11. Regression guards for the pattern fixes (issue #37 AT round)
+    # ------------------------------------------------------------------
+    {
+        "id": "H07",
+        "group": "H. Span shaping",
+        "desc": "A comma-separated URL list must not swallow the text after it",
+        # The URL pattern used to include the trailing comma, which left
+        # consecutive URL spans separated by whitespace alone - and the
+        # anonymizer merges same-type spans separated by whitespace, so the
+        # whole run collapsed into one placeholder and every character between
+        # the first and last URL was deleted. "siin." surviving is the assertion
+        # that matters; a regex-level test cannot catch this, because the
+        # deletion comes from the merge, not from the pattern.
+        "payload": {
+            "texts": [
+                "Vaata example.com/about, company.ee/kontakt, "
+                "shop.example.com/products?category=books siin."
+            ],
+        },
+        "expect_removed": [
+            "example.com/about",
+            "company.ee/kontakt",
+            "shop.example.com/products?category=books",
+        ],
+        "expect_kept": ["Vaata ", " siin."],
+    },
+    {
+        "id": "H08",
+        "group": "H. Span shaping",
+        "desc": "International phone formats outside the Estonian country-code list",
+        # Narrowing the pattern against isikukood false positives had also
+        # dropped these two formats entirely.
+        "payload": {"texts": ["Helista +44 7700 900123 või +1 202 555 0147."]},
+        "expect_removed": ["+44 7700 900123", "+1 202 555 0147", "900123", "555 0147"],
+    },
+    {
+        "id": "H09",
+        "group": "H. Span shaping",
+        "desc": "Document prefixes currently issued by PPA",
+        "payload": {
+            "texts": [
+                "Pass KG1234567, ID-kaart AD1234567, digi-ID NA1234567, "
+                "elamisluba PF1234567, välismaalase pass VG1234567."
+            ]
+        },
+        "expect_removed": [
+            "KG1234567",
+            "AD1234567",
+            "NA1234567",
+            "PF1234567",
+            "VG1234567",
+        ],
+    },
+    {
+        "id": "H10",
+        "group": "H. Span shaping",
+        "desc": "Ethereum wallet address",
+        # Presidio's built-in crypto recognizer is Bitcoin-only, so CRYPTO was
+        # listed as a supported entity but unreachable for Ethereum.
+        "payload": {
+            "texts": ["Rahakoti aadress on 0x742d35Cc6634C0532925a3b844Bc454e4438f44e."]
+        },
+        "expect_removed": ["0x742d35Cc6634C0532925a3b844Bc454e4438f44e"],
+    },
+    {
+        "id": "H11",
+        "group": "H. Span shaping",
+        "desc": "ISO date and a full timestamp are anonymised whole",
+        # "2026-09-23 15:30:00" used to come back as "2026-09-23 [KUUPÄEV]:00":
+        # no ISO date pattern, and the time pattern had no seconds.
+        "payload": {"texts": ["Kohtumine toimus 2026-09-23 15:30:00 kontoris."]},
+        "expect_removed": ["2026-09-23", "15:30:00", ":00"],
+        "expect_kept": ["Kohtumine toimus ", " kontoris."],
+    },
+    {
+        "id": "H12",
+        "group": "H. Span shaping",
+        "desc": "Geocoordinates are anonymised as a location",
+        # A coordinate pins a person down as precisely as a street address.
+        # Two-decimal sums in the same sentence must survive, since decimal
+        # places are the only thing separating them.
+        "payload": {
+            "texts": [
+                "Kohtume koordinaatidel 59.4370, 24.7536 ja arve oli "
+                "15.30, 24.50 eurot."
+            ]
+        },
+        "expect_removed": ["59.4370, 24.7536", "59.4370", "24.7536"],
+        "expect_kept": ["15.30, 24.50 eurot"],
+    },
 ]
