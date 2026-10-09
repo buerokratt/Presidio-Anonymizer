@@ -1,7 +1,14 @@
 """Pattern-level regression tests for the YAML recognizers.
 
 Runs the regexes straight out of the config, with no model and no container, so
-a pattern change can be checked in under a second:
+a pattern change can be checked in under a second.
+
+The patterns are compiled with PATTERN_FLAGS, which is what Presidio's
+PatternRecognizer uses by default. IGNORECASE is the one that matters: it is on
+whether or not a pattern was written expecting it, so an uppercase-only
+character class does not mean what it looks like it means. Compiling without
+those flags here would make this file assert behaviour the running service does
+not have.
 
     uv run python tests/test_patterns.py
     uv run python tests/test_patterns.py --config config/presidio-stanza-estbert.yml
@@ -22,6 +29,10 @@ import sys
 from typing import Any
 
 import yaml
+
+# Presidio's PatternRecognizer default. Our recognizers are built without
+# overriding it, so this is what the service actually runs.
+PATTERN_FLAGS = re.IGNORECASE | re.MULTILINE | re.DOTALL
 
 # Cases below are grouped by the recognizer they are about, but any case may
 # assert several entities at once -- that is how cross-pattern collisions get
@@ -166,14 +177,14 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "name": "phone: the card-number overlap is known and shadowed",
-        # Pre-existing, and unchanged by the international-format work: the
-        # first two groups of a 16-digit card also fit the bare local-number
-        # branch. It costs nothing because CREDIT_CARD covers the whole number
-        # and outranks it, but the case is here so it cannot quietly get worse.
+        # The first two groups of a 16-digit card also fit the bare
+        # local-number branch. CREDIT_CARD is no longer matched here at all -
+        # Presidio's built-in owns it, with a Luhn check this file cannot see -
+        # so the expectation is only that the phone overlap does not grow.
         "text": "Kaart 4242 4242 4242 4242.",
         "expect": {
             "PHONE_NUMBER": ["4242 4242"],
-            "CREDIT_CARD": ["4242 4242 4242 4242"],
+            "CREDIT_CARD": [],
         },
     },
     {
@@ -324,14 +335,16 @@ CASES: list[dict[str, Any]] = [
         "expect": {"EST_ID_DOC": []},
     },
     {
-        "name": "tricky/crypto: a git SHA and an uppercase 0X are not addresses",
-        # 40 hex digits without the 0x prefix is a commit hash; Ethereum
-        # addresses are written with a lowercase x.
+        "name": "tricky/crypto: a git SHA is not an address, an uppercase 0X is",
+        # 40 hex digits without the 0x prefix is a commit hash and must not
+        # match. "0X" does match, because Presidio compiles with IGNORECASE -
+        # which is the behaviour we want anyway: an address written with a
+        # capital X is still an address.
         "text": (
             "Commit 3f2a1b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a ja "
             "0X742d35Cc6634C0532925a3b844Bc454e4438f44e."
         ),
-        "expect": {"CRYPTO": []},
+        "expect": {"CRYPTO": ["0X742d35Cc6634C0532925a3b844Bc454e4438f44e"]},
     },
     {
         "name": "tricky/plate: KNOWN LIMITATION - uppercase unit abbreviations",
@@ -341,10 +354,52 @@ CASES: list[dict[str, Any]] = [
         "expect": {"CAR_NUMBER": ["45 KMH", "20 KGF", "123 ABC"]},
     },
     {
-        "name": "tricky/isikukood: an 11-digit number with a wrong century digit",
-        # The first digit encodes century and sex and only runs 1-6.
-        "text": "Number 79001010000 ei ole isikukood, 39001010000 on.",
+        "name": "tricky/isikukood: an 11-digit number with a first digit outside 1-8",
+        # The first digit encodes sex and century and runs 1-8: 1-2 for the
+        # 1800s through to 7-8 for the 2100s. 9 is not a thing.
+        "text": "Number 99001010000 ei ole isikukood, 39001010000 on.",
         "expect": {"EE_PERSONAL_CODE": ["39001010000"]},
+    },
+    # ==================================================================
+    # Case sensitivity. Presidio compiles with IGNORECASE, so a pattern that
+    # looks case-sensitive is not one. These cases pin down what that means
+    # per recognizer, because the difference is invisible in the YAML.
+    # ==================================================================
+    {
+        "name": "flags/plate: a lower-case plate matches, a sum does not",
+        # The class is written [A-ZÕÄÖÜ] but IGNORECASE makes it match either
+        # case - deliberately kept, since a plate typed in lower case in a chat
+        # is still a plate. The exclusion list is case-insensitive with it.
+        "text": "Auto 123 abc ja 777 AAA, trahv 500 eur ja 500 EUR.",
+        "expect": {"CAR_NUMBER": ["123 abc", "777 AAA"]},
+    },
+    {
+        "name": "flags/plate: time and count abbreviations are not plates",
+        # "ootasin 15 min" has the shape of a plate, and only matched at all
+        # because IGNORECASE reaches lower-case words.
+        "text": "Ootasin 15 min, kulus 500 mln eurot ja 30 sek.",
+        "expect": {"CAR_NUMBER": []},
+    },
+    {
+        "name": "flags/plate: KNOWN LIMITATION - any 3-letter word still matches",
+        # The exclusion list can only name the abbreviations we know about.
+        "text": "Kaal 250 kil ja pikkus 120 cmx.",
+        "expect": {"CAR_NUMBER": ["250 kil", "120 cmx"]},
+    },
+    {
+        "name": "flags/doc: a lower-case document number matches",
+        "text": "Pass kg1234567 ja KG1234567.",
+        "expect": {"EST_ID_DOC": ["kg1234567", "KG1234567"]},
+    },
+    {
+        "name": "flags/url: host case does not matter, extension case does not either",
+        "text": "Vaata EXAMPLE.COM ja Example.Com/About, manus Aruanne.PDF.",
+        "expect": {"URL": ["EXAMPLE.COM", "Example.Com/About"]},
+    },
+    {
+        "name": "flags/date: a capitalised month name still matches",
+        "text": "Kohtume 23. September 2026 ja 24. september 2026.",
+        "expect": {"DATE_TIME": ["23. September 2026", "24. september 2026"]},
     },
 ]
 
@@ -359,7 +414,7 @@ def load_patterns(config_path: str) -> dict[str, list[tuple[str, re.Pattern[str]
         entity = recognizer["supported_entity"]
         for pattern in recognizer.get("patterns", []):
             by_entity.setdefault(entity, []).append(
-                (pattern["name"], re.compile(pattern["regex"]))
+                (pattern["name"], re.compile(pattern["regex"], PATTERN_FLAGS))
             )
     return by_entity
 

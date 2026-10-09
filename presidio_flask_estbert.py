@@ -9,7 +9,7 @@ from presidio_analyzer import (
 )
 from presidio_analyzer.nlp_engine import NlpArtifacts, NlpEngineProvider
 from presidio_analyzer.entity_recognizer import EntityRecognizer
-from typing import List, Optional
+from typing import Callable, List, Optional
 import logging
 import os
 import re
@@ -84,15 +84,33 @@ class EstBERTRecognizerONNX(EntityRecognizer):
     WINDOW_OVERLAP_TOKENS = 50
 
     # An Estonian registration plate, which the CAR_NUMBER recognizer owns.
-    PLATE_SHAPE = re.compile(r"[0-9]{2,3}\s?[A-ZÕÄÖÜ]{3}")
+    # IGNORECASE to match the CAR_NUMBER pattern this defends: Presidio
+    # compiles that one case-insensitively, so without the flag here a
+    # lower-case plate slipped past the guard and was reported as an
+    # organisation.
+    RECOGNIZER_NAME = "EstBERT_NER_ONNX_Recognizer"
+
+    PLATE_SHAPE = re.compile(r"[0-9]{2,3}\s?[A-ZÕÄÖÜ]{3}", re.IGNORECASE)
+
+    DEFAULT_LABEL_MAPPING = {
+        "PER": "PERSON",
+        "ORG": "ORGANIZATION",
+        "LOC": "LOCATION",
+        "GPE": "GPE",
+        "DATE": "DATE_TIME",
+        "TIME": "DATE_TIME",
+    }
 
     def __init__(
-        self, model_name: str = "tartuNLP/EstBERT_NER", supported_language: str = "xx"
+        self,
+        model_name: str = "tartuNLP/EstBERT_NER",
+        supported_language: str = "xx",
+        label_mapping: Optional[dict[str, str]] = None,
     ) -> None:
         super().__init__(
             supported_entities=self.ENTITIES,
             supported_language=supported_language,
-            name="EstBERT_NER_ONNX_Recognizer",
+            name=self.RECOGNIZER_NAME,
         )
 
         logger.info(f"Loading EstBERT model with ONNX optimization: {model_name}")
@@ -151,14 +169,11 @@ class EstBERTRecognizerONNX(EntityRecognizer):
                 device=-1,  # CPU
             )
 
-            self.label_mapping = {
-                "PER": "PERSON",
-                "ORG": "ORGANIZATION",
-                "LOC": "LOCATION",
-                "GPE": "GPE",
-                "DATE": "DATE_TIME",
-                "TIME": "DATE_TIME",
-            }
+            # estbert_configuration.entity_mapping in the YAML was never read:
+            # this mapping was hardcoded, so the config key looked live and was
+            # not. The config now wins, and the hardcoded table is the fallback
+            # for a config that omits it.
+            self.label_mapping = dict(label_mapping or self.DEFAULT_LABEL_MAPPING)
 
             logger.info(
                 f"EstBERT ONNX recognizer initialized for language: {supported_language}"
@@ -335,6 +350,97 @@ class EstBERTRecognizerONNX(EntityRecognizer):
                 spans.append((piece_start, piece_end))
         return spans
 
+    @staticmethod
+    def _straddles(start: int, end: int, others: List[RecognizerResult]) -> bool:
+        """True if [start, end) partly overlaps any of `others`.
+
+        Disjoint is fine and so is full containment either way round; only a
+        partial overlap is a problem, because the anonymizer has no rule for it
+        and emits both spans.
+        """
+        for other in others:
+            if other.end <= start or end <= other.start:
+                continue
+            if start <= other.start and other.end <= end:
+                continue
+            if other.start <= start and end <= other.end:
+                continue
+            return True
+        return False
+
+    @classmethod
+    def _merge_adjacent_spans(
+        cls, text: str, results: List[RecognizerResult]
+    ) -> List[RecognizerResult]:
+        """Join same-type spans separated only by spaces, keeping the best score.
+
+        The model labels a multi-word name one word at a time often enough that
+        "New Yorki" comes back as GPE("New") and GPE("Yorki") scored
+        separately. Filtering them separately drops whichever falls below the
+        threshold and leaves that half of the name in clear text - the defect
+        this issue was opened for, still reachable for names the model has weak
+        evidence for.
+
+        Merging before the filter is what makes the scores agree with the
+        output. AnonymizerEngine already rewrites same-type spans separated by
+        spaces as one placeholder, so by the time the text is produced the
+        pipeline has treated them as a single entity regardless; only the
+        threshold filter was treating them as two. The merged span takes the
+        higher score, so strong evidence for one word carries the rest of the
+        name.
+
+        A merge is abandoned when the result would half-cover some other span.
+        Presidio resolves one span containing another, but not two that only
+        partly overlap: it writes both, and the shared characters come out
+        twice. The model does emit spans that sit inside each other - a
+        one-letter LOCATION fragment inside a GPE, say - and absorbing the
+        fragment into its neighbour is what turns containment into a partial
+        overlap.
+
+        A merged span that turns out to be plate-shaped is dropped, for the
+        same reason _normalize_span() drops one: a registration number is not
+        an organisation name, and the model outscores the CAR_NUMBER pattern.
+
+        The gap has to be spaces alone, which is the anonymizer's own rule.
+        That is also what keeps a deliberate split from being undone:
+        _normalize_span cuts at commas, sentence ends and newlines, so its
+        pieces are never separated by spaces alone.
+        """
+        if not results:
+            return results
+
+        ordered = sorted(results, key=lambda r: (r.start, r.end))
+        merged = [ordered[0]]
+        for index, current in enumerate(ordered[1:], start=1):
+            previous = merged[-1]
+            gap = text[previous.end : current.start]
+            others = [
+                other
+                for position, other in enumerate(ordered)
+                if other is not current and position != index and other is not previous
+            ]
+            if (
+                current.entity_type == previous.entity_type
+                and previous.end <= current.start
+                and gap != ""
+                and gap.strip(" ") == ""
+                and not cls._straddles(previous.start, current.end, others)
+            ):
+                previous.end = current.end
+                previous.score = max(previous.score, current.score)
+            else:
+                merged.append(current)
+
+        # The plate guard has to run again here. _normalize_span() drops a piece
+        # that is a plate, but the model splits "45 XYZ" into "45" and "XYZ",
+        # and neither half is plate-shaped on its own - so the guard passed them
+        # and this merge put them back together as one ORGANIZATION.
+        return [
+            span
+            for span in merged
+            if not cls.PLATE_SHAPE.fullmatch(text[span.start : span.end])
+        ]
+
     def analyze(
         self, text: str, entities: List[str], nlp_artifacts: NlpArtifacts | None = None
     ) -> List[RecognizerResult]:
@@ -392,7 +498,7 @@ class EstBERTRecognizerONNX(EntityRecognizer):
         except Exception as e:
             logger.error(f"Error in EstBERT ONNX analysis: {e}")
 
-        return results
+        return self._merge_adjacent_spans(text, results)
 
 
 class DenylistRecognizer(EntityRecognizer):
@@ -521,6 +627,77 @@ def apply_allowlist(
     return filtered_results
 
 
+def is_pattern_result(result: RecognizerResult) -> bool:
+    """True if one of the YAML pattern recognizers produced this result."""
+    source = (result.recognition_metadata or {}).get(
+        RecognizerResult.RECOGNIZER_NAME_KEY
+    )
+    return source in pattern_recognizer_names
+
+
+def is_model_result(result: RecognizerResult) -> bool:
+    """True if the NER model produced this result."""
+    source = (result.recognition_metadata or {}).get(
+        RecognizerResult.RECOGNIZER_NAME_KEY
+    )
+    return source == EstBERTRecognizerONNX.RECOGNIZER_NAME
+
+
+def apply_pattern_precedence(
+    results: List[RecognizerResult], text: str
+) -> List[RecognizerResult]:
+    """Let a pattern own the text it matched when a model span overlaps it.
+
+    A pattern match is deterministic; a model span is a guess. Left to compete
+    on score the model wins every time - it labels confidently enough to
+    outrank any score a pattern can carry - so "123 abc" came back as
+    [ORGANISATSIOON] rather than [AUTONUMBER], and "err.ee/uudised?id=12" as an
+    organisation rather than a URL. Nothing leaked in either case; the
+    placeholder was simply wrong, which is still a defect to anyone reading the
+    output.
+
+    The model span is cut back rather than discarded, the same way a denylist
+    match is carved out of one: a span over "Auto 123 ABC" still has "Auto" to
+    report once the plate is taken out of it.
+
+    Only a clash of different types counts. Two spans of the same type are a
+    duplicate, not a mislabel, and Presidio already settles those.
+
+    The model's spans yield to every other recognizer, Presidio's built-ins
+    included - those are deterministic too, and the validated ones (IBAN by
+    mod-97, cards by Luhn, e-mail by its TLD check) are better evidence than
+    anything here. Leaving them out was not an option either: a model span
+    reading "Konto EE38" half-covers the IBAN beside it, and a partial overlap
+    makes the anonymizer write both spans, so the text came back with "EE38"
+    in it twice.
+
+    What never happens is the reverse - one of our patterns carving a
+    built-in. Cutting our unvalidated card pattern out of a verified IBAN
+    split one account number into "[PANGAKONTO] [PANGAKAART]".
+    """
+    blockers = [result for result in results if not is_model_result(result)]
+    if not blockers:
+        return results
+
+    kept: List[RecognizerResult] = []
+    for result in results:
+        if not is_model_result(result):
+            kept.append(result)
+            continue
+        clashes = [
+            blocker
+            for blocker in blockers
+            if blocker.entity_type != result.entity_type
+            and result.start < blocker.end
+            and blocker.start < result.end
+        ]
+        if clashes:
+            kept.extend(subtract_spans(result, clashes, text))
+        else:
+            kept.append(result)
+    return kept
+
+
 def apply_score_thresholds(
     results: List[RecognizerResult], text: str
 ) -> List[RecognizerResult]:
@@ -531,10 +708,7 @@ def apply_score_thresholds(
     """
     kept = []
     for result in results:
-        source = (result.recognition_metadata or {}).get(
-            RecognizerResult.RECOGNIZER_NAME_KEY
-        )
-        if source in pattern_recognizer_names:
+        if is_pattern_result(result):
             kept.append(result)
             continue
 
@@ -591,6 +765,69 @@ def subtract_spans(
     return trimmed
 
 
+def validate_ee_personal_code(text: str) -> bool:
+    """Check an isikukood's mod-11 check digit.
+
+    The regex can only describe the shape - eleven digits, a first digit of
+    1-8, a month of 01-12 and a day of 01-31 - which leaves "39001010001"
+    looking exactly like a real code. It is not one: the check digit is the
+    thing that decides, and the standard defines nothing else to verify.
+
+    An earlier version also required the birth date to be a real calendar date,
+    which rejected the 30th of February. That is stricter than the standard,
+    which specifies only 01-31 for the day, and strictness in that direction is
+    the dangerous one here: a real code with an odd date would go unanonymised.
+    It also earned nothing - every impossible date to hand fails the check digit
+    anyway.
+
+    The algorithm cannot catch every single-digit error: 51107121760 and
+    61107121760 differ by one digit and both verify. That is a known flaw in
+    the published method, so both are accepted here too.
+    """
+    if len(text) != 11 or not text.isdigit():
+        return False
+
+    digits = [int(character) for character in text]
+    if not 1 <= digits[0] <= 8:
+        return False
+
+    # The published algorithm: weight the first ten digits, take modulo 11, and
+    # if that lands on 10, weight them again on the second scale. A second 10
+    # becomes 0.
+    first = (1, 2, 3, 4, 5, 6, 7, 8, 9, 1)
+    second = (3, 4, 5, 6, 7, 8, 9, 1, 2, 3)
+    remainder = sum(d * w for d, w in zip(digits[:10], first, strict=True)) % 11
+    if remainder == 10:
+        remainder = sum(d * w for d, w in zip(digits[:10], second, strict=True)) % 11
+        if remainder == 10:
+            remainder = 0
+    return remainder == digits[10]
+
+
+# Validators a YAML recognizer can ask for by name, with `validator:`. A
+# pattern describes a shape; a validator decides whether that shape is a real
+# identifier, which is the one thing a regex cannot do.
+VALIDATORS: dict[str, Callable[[str], bool]] = {
+    "ee_personal_code": validate_ee_personal_code,
+}
+
+
+class ValidatingPatternRecognizer(PatternRecognizer):
+    """A PatternRecognizer that checks its matches before reporting them.
+
+    Presidio scores a validated match 1.0 and an invalidated one 0, so a
+    shape-only match disappears instead of being reported with the pattern's
+    nominal confidence.
+    """
+
+    def __init__(self, validator: Callable[[str], bool], **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._validator = validator
+
+    def validate_result(self, pattern_text: str) -> bool:
+        return self._validator(pattern_text)
+
+
 def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecognizer]:
     """Create pattern-based recognizers from configuration"""
     recognizers = []
@@ -615,12 +852,29 @@ def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecog
                 )
                 patterns.append(pattern)
 
-            recognizer = PatternRecognizer(
-                supported_entity=supported_entity,
-                patterns=patterns,
-                name=name,
-                supported_language=language,
-            )
+            validator_name = rec_config.get("validator")
+            validator = VALIDATORS.get(validator_name) if validator_name else None
+            if validator_name and validator is None:
+                logger.error(
+                    f"  Unknown validator '{validator_name}' for {name}; "
+                    f"reporting matches unvalidated"
+                )
+
+            if validator is not None:
+                recognizer = ValidatingPatternRecognizer(
+                    validator=validator,
+                    supported_entity=supported_entity,
+                    patterns=patterns,
+                    name=name,
+                    supported_language=language,
+                )
+            else:
+                recognizer = PatternRecognizer(
+                    supported_entity=supported_entity,
+                    patterns=patterns,
+                    name=name,
+                    supported_language=language,
+                )
             recognizers.append(recognizer)
             logger.info(f"  ✓ Created: {name} for {supported_entity}")
 
@@ -705,7 +959,9 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
             estbert_config = config.get("estbert_configuration", {})
             model_name = estbert_config.get("model_name", "tartuNLP/EstBERT_NER")
             estbert_recognizer = EstBERTRecognizerONNX(
-                model_name=model_name, supported_language=lang
+                model_name=model_name,
+                supported_language=lang,
+                label_mapping=estbert_config.get("entity_mapping"),
             )
             analyzer.registry.add_recognizer(estbert_recognizer)
             logger.info("  EstBERT ONNX recognizer added")
@@ -783,6 +1039,7 @@ def analyze_with_lists(
             correlation_id=correlation_id,
         )
         results = apply_score_thresholds(results, text)
+        results = apply_pattern_precedence(results, text)
         logger.info(f"  Found {len(results)} entities")
     except Exception as e:
         logger.error(f"  Analysis failed: {e}", exc_info=True)

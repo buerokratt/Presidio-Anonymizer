@@ -49,6 +49,6 @@ RUN mkdir -p /app/config /app/logs /app/models
 EXPOSE $PORT
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/ || exit 1
+    CMD curl -f http://localhost:${PORT}/health || exit 1
 
 CMD ["uv", "run", "python", "app.py"]
