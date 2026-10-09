@@ -1,90 +1,234 @@
 # Estonian Presidio API
 
-A privacy-focused Flask API server that combines Microsoft Presidio with the Estonian EstBERT NER model to detect and anonymize personally identifiable information (PII) in Estonian text.
+A Flask REST API that detects and anonymizes personally identifiable information (PII) in Estonian text.
+It plugs a transformer NER model (run through ONNX Runtime) and a set of Estonian regex recognizers into
+[Microsoft Presidio](https://microsoft.github.io/presidio/).
+
+Everything is driven by a YAML config file: entities, recognizer patterns, score thresholds and the default
+anonymization placeholders all live in `config/`, not in code.
 
 ## Features
 
-* **Estonian NER Support** : Integrates `tartuNLP/EstBERT_NER_v2` for Estonian named entity recognition
-* **Multilingual** : Supports Estonian via sPaCy
-* **Custom Estonian Patterns** : Recognizes Estonian-specific entities like personal codes (isikukood), car numbers, and phone numbers
-* **Allowlist/Denylist Support** : Fine-tune detection by excluding false positives or forcing specific words to be detected as PII
-* **REST API** : Easy-to-use HTTP endpoints for text analysis and anonymization
-* **Docker Support** : Ready-to-deploy containerized application
-* **Configurable** : YAML-based configuration for entities, patterns, and anonymization rules
-* **Swagger Documentation** : Interactive API documentation available at `/docs/`
+* **Transformer NER** : `buerokrattRIA/xlm-roberta-NER-syntheticGov`, exported to ONNX on first start and run on CPU,
+  for PERSON, ORGANIZATION, LOCATION, GPE and DATE_TIME
+* **Estonian patterns** : personal codes (isikukood), document numbers, car plates, phone numbers, Estonian
+  date formats, IBANs, coordinates, Ethereum wallets and more, all defined in the YAML config
+* **Allowlist / denylist** : exclude false positives or force words to be treated as PII; every entry is
+  automatically expanded into all Estonian case forms
+* **Batch requests** : one call anonymizes an array of texts
+* **Six anonymization operators** : replace, redact, mask, hash, encrypt, keep — per entity or as a `DEFAULT`
+* **Swagger UI** : interactive API documentation at `/docs/`
+* **Docker** : ready-to-run image and Compose file
 
-## Supported Entities
+## Quick start
 
-### Estonian-Specific
-
-* **EE_PERSONAL_CODE** : Estonian personal identification codes (isikukood)
-* **CAR_NUMBER** : Estonian car registration numbers
-* **PHONE_NUMBER** : Estonian and international phone numbers
-* **EST_ID_DOC** : Estonian document numbers
-
-### General Entities (via EstBERT + Presidio)
-
-* **PERSON** : Personal names
-* **ORGANIZATION** : Company and organization names
-* **LOCATION** : Addresses and locations
-* **GPE** : Geopolitical entities
-* **EMAIL_ADDRESS** : Email addresses
-* **URL** : Website URLs
-* **IP_ADDRESS** : IP addresses
-* **IBAN_CODE** : IBAN bank account numbers
-* **DATE_TIME** : Dates and times
-* **CRYPTO** : Cryptocurrency addresses
-* **CREDIT_CARD** : Credit card numbers
-
-### Special Entities
-
-* **DENYLIST_MATCH** : Words from the denylist that are forced to be detected as PII
-
-## Installation
-
-### Using Docker Compose (Recommended)
-
-1. Clone the repository:
+### Docker Compose (recommended)
 
 ```bash
 git clone https://github.com/buerokratt/Presidio-Anonymizer.git
 cd Presidio-Anonymizer
+docker compose up --build -d
 ```
 
-2. Start the service:
+The first start downloads the model and exports it to ONNX, which takes a while; the healthcheck allows a
+120 s start period. The model is cached in the `models_cache` volume, so later starts are fast. Removing that
+volume makes the next start slow again.
+
+`./config` is mounted read-only into the container, so a config change only needs a restart, not a rebuild:
 
 ```bash
-docker-compose up --build -d
+docker compose restart presidio-api
 ```
 
-3. Test the API:
+### Local (without Docker)
+
+[uv](https://docs.astral.sh/uv/) is the only supported package manager. Python is pinned to 3.12.10 by
+`.python-version`.
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
+uv sync --frozen
+uv run python app.py --config config/presidio-spacy-estbert.yml
+```
+
+`--config` is required outside Docker, because the default points at the container path
+`/app/config/presidio-spacy-estbert.yml`. Other flags: `--host` (default `0.0.0.0`), `--port` (default `$PORT`
+or `8000`) and `--debug`.
+
+### First request
+
+```bash
+curl -X POST http://localhost:8000/anonymize \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "Minu nimi on Jaan Tamm ja ma elan Tallinnas.",
+    "texts": ["Minu nimi on Jaan Tamm ja ma elan Tallinnas."],
     "language": "xx"
-}'
+  }'
 ```
 
-4. Access Swagger documentation:
+Swagger UI: <http://localhost:8000/docs/>
 
+## Supported entities
+
+The entities that are actually detected are the ones listed under `entities_to_detect` in the config.
+With the default config:
+
+| Entity | Source |
+|---|---|
+| `PERSON`, `ORGANIZATION`, `LOCATION`, `GPE` | NER model |
+| `DATE_TIME` | NER model, Estonian date/time patterns, Presidio built-in |
+| `EE_PERSONAL_CODE` | Pattern: Estonian personal code (isikukood) |
+| `EST_ID_DOC` | Pattern: Estonian ID card / passport numbers |
+| `CAR_NUMBER` | Pattern: Estonian registration plates (`123 ABC`) |
+| `PHONE_NUMBER` | Pattern: Estonian and international numbers; Presidio built-in |
+| `EMAIL_ADDRESS` | Presidio built-in |
+| `URL` | Pattern (file names such as `aruanne.pdf` are excluded); Presidio built-in |
+| `IP_ADDRESS` | Pattern: IPv4 and IPv6; Presidio built-in |
+| `IBAN_CODE`, `CREDIT_CARD` | Presidio built-in only — validated by mod-97 and Luhn |
+| `CRYPTO` | Pattern: Ethereum addresses; Presidio built-in (Bitcoin) |
+| `LOCATION` (coordinates) | Pattern: decimal (`59.4370, 24.7536`) and degree/DMS coordinates |
+| `DENYLIST_MATCH` | Words from the request's `denylist` |
+
+## API
+
+All endpoints are documented in Swagger at `/docs/`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/anonymize` | Detect and anonymize PII in one or more texts |
+| `GET` | `/health` | Liveness check |
+| `GET` | `/supportedentities` | Entity types that can be detected |
+| `GET` | `/recognizers` | Active recognizers |
+| `GET` | `/config` | Active configuration (no secrets) |
+| `GET` | `/test` | Returns `{"status": "test route works"}` |
+
+There is no separate `/analyze` endpoint; `/anonymize` does both detection and anonymization.
+
+### `POST /anonymize`
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `texts` | array of strings | yes | Texts to anonymize. Must be a non-empty array. Texts are processed one after another. |
+| `language` | string | no, default `xx` | Must match the language code of the loaded config (`xx` for the default config, `et` for the Stanza config). Any other value fails with `No recognizers registered for language`. |
+| `anonymizers` | object | no | Operators per entity type, or under `DEFAULT` for all entities. See [Operators](#anonymization-operators). |
+| `entities` | array of strings | no | Restrict detection to these entity types. Defaults to `entities_to_detect` from the config. |
+| `allowlist` | array of strings | no | Words/phrases that must not be anonymized. |
+| `denylist` | array of strings | no | Words/phrases that are always anonymized, as `DENYLIST_MATCH`. |
+
+**Example**
+
+```bash
+curl -X POST http://localhost:8000/anonymize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "texts": [
+      "Kontakt Jaan Tamm email jaan@example.com või telefon +372 5555 5555",
+      "Mari Mets elab Tallinnas"
+    ],
+    "language": "xx",
+    "anonymizers": {
+      "DEFAULT": {"type": "replace", "new_value": "[VARJATUD]"},
+      "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL]"}
+    }
+  }'
 ```
-http://localhost:8000/docs/
+
+**Response**
+
+One result per input text, in the same order (detections shown are illustrative; what is found depends on
+the model). `items` lists every replacement; `start`/`end` are offsets
+into the *anonymized* text and `text` is the replacement value.
+
+```json
+{
+  "results": [
+    {
+      "text": "Kontakt [VARJATUD] email [EMAIL] või telefon [VARJATUD]",
+      "items": [
+        {"start": 45, "end": 55, "entity_type": "PHONE_NUMBER", "text": "[VARJATUD]", "operator": "replace"},
+        {"start": 25, "end": 32, "entity_type": "EMAIL_ADDRESS", "text": "[EMAIL]", "operator": "replace"},
+        {"start": 8, "end": 18, "entity_type": "PERSON", "text": "[VARJATUD]", "operator": "replace"}
+      ]
+    },
+    {
+      "text": "[VARJATUD] elab [VARJATUD]",
+      "items": ["..."]
+    }
+  ]
+}
 ```
 
-## API Endpoints
+**Errors**
 
-### Health Check
+Errors are returned as `{"error": "..."}`. Malformed requests (not JSON, `texts` missing, not an array or
+empty, unknown operator type, unsupported `hash_type`) return `400`; failures during analysis return `500`.
 
-```http
-GET /health
+### Anonymization operators
+
+Operators are given per entity type in `anonymizers`. `DEFAULT` applies to every entity without its own entry.
+
+| Type | Parameters | Effect | Reversible |
+|---|---|---|---|
+| `replace` | `new_value` (default `<ENTITY_TYPE>`) | Substitute a placeholder | no |
+| `redact` | — | Remove the text entirely | no |
+| `mask` | `masking_char` (default `*`), `chars_to_mask` (default `4`), `from_end` (default `true`) | Mask characters | no |
+| `hash` | `hash_type`: `sha256` (default), `sha512` or `md5` | Deterministic hash; the same input gives the same hash | no |
+| `encrypt` | `key`: 16, 24 or 32 characters (AES-128/192/256) | AES encryption | yes, with the same key |
+| `keep` | — | Leave the text unchanged | — |
+
+Any other `type` is rejected with `400`.
+
+```json
+{
+  "anonymizers": {
+    "DEFAULT": {"type": "hash", "hash_type": "sha256"},
+    "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL]"},
+    "PHONE_NUMBER": {"type": "mask", "masking_char": "X", "chars_to_mask": 4, "from_end": true},
+    "LOCATION": {"type": "keep"}
+  }
+}
 ```
 
-Returns API status and configuration information.
+**When `anonymizers` is omitted**, every entity is replaced with the Estonian placeholder configured under
+`anonymization_config.default_operators` (`[ISIK]`, `[ASUKOHT]`, `[ISIKUKOOD]`, …), and `DENYLIST_MATCH` with
+`[PII]` unless the config sets one.
 
-**Response:**
+**When `anonymizers` is given**, the config placeholders are not used at all. Entities with neither their own
+entry nor a `DEFAULT` are replaced with `<ENTITY_TYPE>`, e.g. `<PERSON>`.
+
+### Allowlist and denylist
+
+Both lists are case-insensitive, and each entry is expanded with EstNLTK Vabamorf into all 28 Estonian case
+forms (14 cases × singular/plural) before matching, so you only need to give the base form:
+`"Tallinn"` also covers `Tallinna`, `Tallinnas`, `Tallinnast`, …; multi-word phrases are expanded too.
+The expansion runs on every request, so very long lists make requests slower.
+
+* **Allowlist** — a detection whose text is entirely allowlisted is dropped. When an allowlisted term sits at
+  the edge of a wider detection, the detection is trimmed rather than kept whole, so
+  `"Phoenix Tallinnas"` with `Tallinn` allowlisted still anonymizes `Phoenix`.
+* **Denylist** — whole-word matches are reported as `DENYLIST_MATCH` and always survive: they are not subject
+  to score thresholds and win any overlap with other detections. An overlapping detection is cut back around
+  the denylisted word rather than discarded, so a name next to it stays protected.
+
+```bash
+curl -X POST http://localhost:8000/anonymize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "texts": ["Microsofti töötaja Jaan Tamm töötab Tallinnas projektiga Phoenix."],
+    "language": "xx",
+    "allowlist": ["Microsoft", "Tallinn"],
+    "denylist": ["Phoenix"],
+    "anonymizers": {
+      "PERSON": {"type": "replace", "new_value": "[ISIK]"},
+      "DENYLIST_MATCH": {"type": "replace", "new_value": "[KONFIDENTSIAALNE]"}
+    }
+  }'
+```
+
+Intended result: `Microsofti töötaja [ISIK] töötab Tallinnas projektiga [KONFIDENTSIAALNE].`
+
+### `GET /health`
 
 ```json
 {
@@ -92,721 +236,194 @@ Returns API status and configuration information.
   "service": "Estonian Presidio API",
   "version": "1.0.0",
   "supported_languages": ["xx"],
-  "model": "tartuNLP/EstBERT_NER + spaCy"
+  "model": "buerokrattRIA/xlm-roberta-NER-syntheticGov + spacy"
 }
 ```
 
-### Anonymize Text
+`model` is built from the loaded config, so it names the model actually in use.
 
-```http
-POST /anonymize
-```
+### `GET /supportedentities?language=xx`
 
-Analyzes and replaces PII entities with anonymized placeholders.
-
-**Request Body:**
+Entity types the analyzer supports for the language, filtered to those in `entities_to_detect`.
 
 ```json
-{
-  "text": "Minu nimi on Jaan Tamm ja ma elan Tallinnas. Projekti nimi on Butterfly.",
-  "language": "xx",
-  "anonymizers": {
-    "PERSON": {"type": "replace", "new_value": "[ISIK]"},
-    "LOCATION": {"type": "mask", "masking_char": "*", "chars_to_mask": 4},
-    "DENYLIST_MATCH": {"type": "hash", "hash_type": "sha256"}
-  },
-  "entities": ["PERSON", "LOCATION"],
-  "allowlist": ["Tallinn"],
-  "denylist": ["Butterfly"]
-}
+{"entities": ["PERSON", "ORGANIZATION", "LOCATION", "EMAIL_ADDRESS", "..."], "language": "xx", "count": 15}
 ```
 
-**Using DEFAULT Operator:**
+### `GET /recognizers?language=xx`
 
-Apply the same anonymization to all detected entities:
+Names of the registered recognizers: `EstBERT_NER_ONNX_Recognizer`, the pattern recognizers from the config
+(`EstonianPersonalCode`, `EstonianPhoneNumbers`, …) and Presidio's built-ins (`EmailRecognizer`,
+`IbanRecognizer`, …).
 
 ```json
-{
-  "text": "Mu nimi on Mart Kask ja email on mart@example.com",
-  "language": "xx",
-  "anonymizers": {
-    "DEFAULT": {
-      "type": "replace",
-      "new_value": "[XXX]"
-    }
-  }
-}
+{"recognizers": ["EstBERT_NER_ONNX_Recognizer", "EstonianPersonalCode", "..."], "language": "xx", "count": 20}
 ```
 
-Or use `DEFAULT` with entity-specific overrides:
-
-```json
-{
-  "text": "Contact John at john@example.com or call +372 5555 5555",
-  "language": "xx",
-  "anonymizers": {
-    "DEFAULT": {"type": "hash", "hash_type": "sha256"},
-    "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL]"},
-    "PHONE_NUMBER": {"type": "mask", "masking_char": "X", "chars_to_mask": 4}
-  }
-}
-```
-
-**Parameters:**
-
-* `text` (required, string): Text to anonymize
-* `language` (optional, string, default: "xx"): Language code
-* `anonymizers` (optional, object): Custom anonymization operators for each entity type
-  * `type`: Anonymization method - "replace", "mask", "redact", or "encrypt"
-  * `new_value`: Replacement text (for "replace" type)
-  * `masking_char`: Character to use for masking (for "mask" type)
-  * `chars_to_mask`: Number of characters to mask (for "mask" type)
-  * `from_end`: Mask from end of string (for "mask" type)
-  * `key`: Encryption key (for "encrypt" type)
-* `entities` (optional, array): Specific entity types to anonymize
-* `allowlist` (optional, array): Words to exclude from anonymization
-* `denylist` (optional, array): Words to force anonymization
-
-**Response:**
-
-```json
-{
-  "items": [
-    {
-      "end": 22,
-      "entity_type": "PERSON",
-      "operator": "replace",
-      "start": 13,
-      "text": "[ISIK]"
-    },
-    {
-      "end": 76,
-      "entity_type": "DENYLIST_MATCH",
-      "operator": "replace",
-      "start": 67,
-      "text": "[KONFIDENTSIAALNE]"
-    }
-  ],
-  "text": "Minu nimi on [ISIK] ja ma elan Tallinnas. Project codename is [KONFIDENTSIAALNE]."
-}
-```
-
-**Anonymization Operators:**
-
-Presidio supports multiple anonymization methods. You can specify operators per entity type or use `DEFAULT` to apply the same operator to all entities.
-
-1. **Replace** : Substitute entity with a placeholder
-
-```json
-   {
-     "anonymizers": {
-       "PERSON": {"type": "replace", "new_value": "[PERSON]"},
-       "DEFAULT": {"type": "replace", "new_value": "[REDACTED]"}
-     }
-   }
-```
-
-1. **Redact** : Completely remove the PII text
-
-```json
-   {
-     "anonymizers": {
-       "DEFAULT": {"type": "redact"}
-     }
-   }
-```
-
-* Removes the entity entirely from the text
-
-1. **Mask** : Replace characters with masking character
-
-```json
-   {
-     "anonymizers": {
-       "PERSON": {
-         "type": "mask",
-         "masking_char": "*",
-         "chars_to_mask": 4,
-         "from_end": true
-       }
-     }
-   }
-```
-
-* `masking_char`: Character to use for masking (default: `*`)
-* `chars_to_mask`: Number of characters to mask
-* `from_end`: Whether to mask from the end (default: `true`)
-
-1. **Hash** : Replace with cryptographic hash
-
-```json
-   {
-     "anonymizers": {
-       "DEFAULT": {
-         "type": "hash",
-         "hash_type": "sha256"
-       }
-     }
-   }
-```
-
-* `hash_type`: Hash algorithm - `sha256`, `sha512`, or `md5`
-* Produces consistent hash for same input
-
-1. **Encrypt** : Replace with AES encrypted value (reversible)
-
-```json
-   {
-     "anonymizers": {
-       "PERSON": {
-         "type": "encrypt",
-         "key": "WmZq4t7w!z%C&F)J"
-       }
-     }
-   }
-```
-
-* `key`: 128-bit, 192-bit, or 256-bit encryption key
-* Allows decryption with the same key
-
-1. **Keep** : Retain original value (no anonymization)
-
-```json
-   {
-     "anonymizers": {
-       "LOCATION": {"type": "keep"}
-     }
-   }
-```
-
-* Useful when combined with `DEFAULT` to preserve specific entities
-
-### Get Supported Entities
-
-```http
-GET /supportedentities?language=xx
-```
-
-Returns list of all entity types that can be detected for a given language.
-
-**Parameters:**
-
-* `language` (optional, string, default: "et"): Language code
-
-**Response:**
-
-```json
-{
-  "entities": ["PERSON", "ORGANIZATION", "LOCATION", "EMAIL_ADDRESS", ...],
-  "language": "xx",
-  "count": 16
-}
-```
-
-### Get Available Recognizers
-
-```http
-GET /recognizers?language=xx
-```
-
-Returns list of all active recognizers for a given language.
-
-**Parameters:**
-
-* `language` (optional, string, default: "xx"): Language code
-
-**Response:**
-
-```json
-{
-  "recognizers": ["EstBERT_NER_Recognizer", "EstonianPersonalCode", "EstonianPhoneNumbers", ...],
-  "language": "xx",
-  "count": 10
-}
-```
-
-### Get Configuration
-
-```http
-GET /config
-```
-
-Returns current API configuration (excluding sensitive data).
-
-**Response:**
+### `GET /config`
 
 ```json
 {
   "supported_languages": ["xx"],
   "default_score_threshold": 0.83,
-  "entities_to_detect": ["PERSON", "ORGANIZATION", ...],
-  "estbert_model": "tartuNLP/EstBERT_NER",
+  "entities_to_detect": ["PERSON", "ORGANIZATION", "..."],
+  "estbert_model": "buerokrattRIA/xlm-roberta-NER-syntheticGov",
   "nlp_engine": "spacy",
-  "custom_recognizers": [...]
+  "custom_recognizers": [
+    {
+      "name": "EstonianPersonalCode",
+      "supported_entity": "EE_PERSONAL_CODE",
+      "supported_language": "xx",
+      "patterns": ["isikukood_pattern"]
+    }
+  ]
 }
 ```
 
-## Allowlist and Denylist Usage
-
-### Allowlist (Excluding False Positives)
-
-Use the allowlist to prevent common words or domain-specific terms from being flagged as PII:
-
-**Example: Company and product names**
-
-```bash
-curl -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Microsoft Azure is used by Acme Corp for cloud services.",
-    "allowlist": ["Microsoft", "Azure", "Acme Corp"]
-  }'
-```
-
-**Use cases:**
-
-* Company names that shouldn't be anonymized
-* Common place names (e.g., "Tallinn", "Estonia")
-* Product names or brands
-* Technical terms that trigger false positives
-
-### Denylist (Forcing Detection)
-
-Use the denylist to ensure specific sensitive terms are always detected as PII:
-
-**Example: Project codenames and internal terms**
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Project Falcon is scheduled for Q3. Contact Alpha team.",
-    "denylist": ["Falcon", "Alpha"],
-    "anonymizers": {
-      "DENYLIST_MATCH": {"type": "replace", "new_value": "[REDACTED]"}
-    }
-  }'
-```
-
-**Use cases:**
-
-* Internal project codenames
-* Classified terminology
-* Domain-specific sensitive information
-* Custom identifiers not recognized by standard models
-
-### Combined Usage
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "John Smith from Microsoft works on Project Phoenix in Tallinn.",
-    "allowlist": ["Microsoft", "Tallinn"],
-    "denylist": ["Phoenix"],
-    "entities": ["PERSON", "ORGANIZATION", "LOCATION"]
-  }'
-```
-
-**Result:**
-
-* "John Smith" → anonymized (detected as PERSON)
-* "Microsoft" → kept (in allowlist)
-* "Phoenix" → anonymized (in denylist)
-* "Tallinn" → kept (in allowlist)
+`custom_recognizers` lists the recognizers defined under `recognizers:` in the config, with their pattern
+names. Presidio's own built-ins are not listed here; `/recognizers` names everything that is registered.
 
 ## Configuration
 
-The API is configured via `config/presidio-stanza-estbert.yml`. Key sections include:
+Two configs ship in `config/`:
 
-### NLP Engine Configuration
+| File | NLP engine | Language code | Notes |
+|---|---|---|---|
+| `presidio-spacy-estbert.yml` | spaCy `xx_ent_wiki_sm` | `xx` | **Default** — used by Docker and the examples above |
+| `presidio-stanza-estbert.yml` | Stanza | `et` | Alternative, with lower pattern scores |
+
+The language code matters: recognizers are registered per language, and requests must send the same
+`language` as the loaded config.
+
+### Main sections
 
 ```yaml
+supported_languages:
+  - xx
+
+# Detections from the NER model and Presidio built-ins below this score are dropped.
+# Pattern recognizers from this file are never filtered by score (see below).
+default_score_threshold: 0.83
+
+# Per-entity overrides of default_score_threshold. Both of these were chosen by
+# measurement: agency names score as low as 0.50, and 0.60 is the best GPE cut
+# over the chat-NER test set.
+entity_score_thresholds:
+  ORGANIZATION: 0.45
+  GPE: 0.60
+
+# NLP engine used for tokenisation (spaCy's own NER is not used for detection)
 nlp_configuration:
-  nlp_engine_name: stanza
+  nlp_engine_name: spacy
   models:
     - lang_code: xx
       model_name: xx_ent_wiki_sm
 
-```
-
-### EstBERT Model Configuration
-
-```yaml
+# Transformer NER model, loaded from Hugging Face and exported to ONNX
 estbert_configuration:
-  model_name: "tartuNLP/EstBERT_NER_v2"
+  model_name: "buerokrattRIA/xlm-roberta-NER-syntheticGov"
   supported_language: xx
-  entity_mapping:
-    LOC: LOCATION
-    ORG: ORGANIZATION
-    PER: PERSON
-    TIME: DATE_TIME
-    DATE: DATE_TIME
-    GPE: GPE
 
-```
+# Entities analysed when a request does not pass `entities`
+entities_to_detect:
+  - PERSON
+  - EE_PERSONAL_CODE
+  # ...
 
-### Custom Recognizers
-
-```yaml
+# Pattern recognizers
 recognizers:
   - name: EstonianPersonalCode
     supported_language: xx
     supported_entity: EE_PERSONAL_CODE
     patterns:
       - name: isikukood_pattern
-        regex: "(?:^|(?<=[.|,|;|:|\\s|!|?]))[1-6][0-9]{2}(01|02|...)[0-9]{3}[0-9](?=[.|,|;|:|\\s|!|?]|$)"
+        regex: "..."
         score: 0.95
-```
 
-### Anonymization Rules
-
-```yaml
+# Placeholders used when a request sends no `anonymizers`
 anonymization_config:
   default_operators:
     PERSON: "[ISIK]"
     LOCATION: "[ASUKOHT]"
     EE_PERSONAL_CODE: "[ISIKUKOOD]"
-    DENYLIST_MATCH: "[PII]"
+    # ...
 ```
 
-## Docker Deployment
+### Score thresholds
 
-### Environment Variables
+The NER model and the Presidio built-in recognizers produce real confidence scores, so their results are
+filtered against `entity_score_thresholds`, falling back to `default_score_threshold`. A regex pattern either
+matches or it does not, so results from the `recognizers:` patterns are **never** dropped for their score —
+if a pattern over-matches, fix the regex. Pattern scores still matter when two detections overlap: Presidio
+keeps the higher-scored one.
 
-#### Application Configuration
+### Model label mapping
 
-* **`FLASK_ENV`** : Flask environment mode
-* Values: `production`, `development`
-* Default: `production`
-* Description: Controls Flask's debug mode and error verbosity. Use `development` for debugging.
-* **`PORT`** : Port number for the API server
-* Type: Integer
-* Default: `8000`
-* Description: The port on which the Flask application listens for HTTP requests.
-* **`HOST`** : Host address to bind to
-* Type: String
-* Default: `0.0.0.0`
-* Description: Network interface to bind to. `0.0.0.0` allows connections from any network interface.
+The NER model's labels are mapped to Presidio entities by `estbert_configuration.entity_mapping` in the
+config. When that key is absent the recognizer falls back to its own table: `PER→PERSON`,
+`ORG→ORGANIZATION`, `LOC→LOCATION`, `GPE→GPE`, `DATE`/`TIME→DATE_TIME`. Both shipped configs declare a
+mapping that matches the fallback.
 
-#### Logging Configuration
+## Docker deployment
 
-* **`LOG_LEVEL`** : Application logging verbosity
-* Values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
-* Default: `INFO`
-* Description: Controls the level of detail in application logs. Use `DEBUG` for troubleshooting.
+### Environment variables
 
-#### Resource Limits (Docker Compose)
+Read by the application:
 
-* **`MEMORY_LIMIT`** : Maximum memory allocation
-* Type: String (e.g., "4g", "2048m")
-* Default: `4g`
-* Description: Limits container memory usage. EstBERT requires ~2-3GB minimum.
-* **`CPU_LIMIT`** : CPU cores allocation
-* Type: String (e.g., "2", "1.5")
-* Default: `2`
-* Description: Number of CPU cores the container can use.
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8000` | Port the server listens on |
+| `ONNX_INTER_OP_THREADS` | `2` | ONNX Runtime inter-op threads |
+| `ONNX_INTRA_OP_THREADS` | `2` | ONNX Runtime intra-op threads per inference |
+| `HF_HOME`, `TRANSFORMERS_CACHE` | `/app/models` in Compose | Hugging Face / ONNX model cache location |
 
-### Example docker-compose.yml
+`docker-compose.yml` and the Dockerfile also set `FLASK_ENV`, `LOG_LEVEL`, `HOST` and `MAX_WORKERS`, but the
+application does not read them: logging is fixed at `INFO`, the host is set with `--host`, and texts in a
+request are processed sequentially.
 
-```yaml
-version: '3.8'
+### Resources and health
 
-services:
-  presidio-api:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - FLASK_ENV=production
-      - PORT=8000
-      - HOST=0.0.0.0
-      - LOG_LEVEL=INFO
-      - TRANSFORMERS_CACHE=/root/.cache/huggingface
-    volumes:
-      - ./config:/app/config
-      - stanza_cache:/root/stanza_resources
-      - transformers_cache:/root/.cache/huggingface
-    deploy:
-      resources:
-        limits:
-          memory: 4g
-          cpus: '2'
-        reservations:
-          memory: 2g
-          cpus: '1'
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+The Compose file limits the container to 4 GB memory and 4 CPUs (reserving 2 GB / 2 CPUs). No GPU is needed.
 
-volumes:
-  stanza_cache:
-  transformers_cache:
-```
+The Compose healthcheck calls `GET /health` every 30 s (10 s timeout, 5 retries, 120 s start period).
 
-### Resource Requirements
+### Image publishing
 
-* **Memory** :
-* Minimum: 2GB RAM
-* Recommended: 4GB RAM (for EstBERT model loading and processing)
-* EstBERT model: ~500MB
-* Application runtime: ~1-2GB
-* **CPU** :
-* Minimum: 1 core
-* Recommended: 2 cores for better performance
-* Note: No GPU required, but will improve performance if available
-* **Storage** :
-* Application: ~500MB
-* Models cache: ~1.5GB
-* Logs and temporary files: ~500MB
-* **Total recommended** : ~3GB
+`ci-build-image.yml` builds and pushes `ghcr.io/<repo>` only on pushes to `dev` that change the repository's
+env file, tagging the image from the release/version variables in it. Changing code alone publishes nothing;
+bump the version in that file to release.
 
-### Health Checks
-
-The container includes built-in health checks that verify API availability:
-
-* **Endpoint** : `GET /health`
-* **Interval** : 30 seconds (how often to check)
-* **Timeout** : 10 seconds (how long to wait for response)
-* **Retries** : 5 (consecutive failures before marking unhealthy)
-* **Start Period** : 60 seconds (grace period during startup)
-
-## Examples
-
-### Basic Anonymization
-
-**Estonian Personal Code Detection:**
-
-**Simple Anonymization with Replace:**
+## Development
 
 ```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Jaan Tamm (isikukood: 38001085718) töötab AS Eesti Firma juures Tallinnas.",
-    "language": "xx"
-  }'
+uvx ruff check .                  # lint
+uvx ruff format --check .         # format check (drop --check to format)
+uv run pyright                    # type check
+uv run pre-commit run --all-files # gitleaks + uv-lock hooks
 ```
 
-### Anonymization Operators Examples
+CI runs ruff lint, ruff format, pyright, `uv sync --frozen` and gitleaks on every push and pull request.
 
-**Using DEFAULT operator (applies to all entities):**
+### Test scripts
 
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Mu nimi on Mart Kask ja email on mart@example.com",
-    "language": "xx",
-    "anonymizers": {
-      "DEFAULT": {
-        "type": "replace",
-        "new_value": "[XXX]"
-      }
-    }
-  }'
-```
+The scripts in `tests/` are standalone and run with `uv run python`; there is no pytest suite and CI does
+not run them.
 
-**Response:**
+| Script | Needs a running API | What it checks |
+|---|---|---|
+| `tests/test_patterns.py [--config …]` | no | YAML regex patterns against expected matches |
+| `tests/test_thresholds.py` | no | Score-threshold filtering: patterns exempt, model and built-ins not |
+| `tests/test_spans.py` | no | Merging of model spans the NER split across words |
+| `tests/test_precedence.py` | no | Who owns text a pattern and a model span both claim |
+| `tests/test_validators.py` | no | The isikukood check digit |
+| `tests/test_gov_chats.py [--url …]` | yes | End-to-end cases from government chat texts |
+| `tests/eval_conll.py <file.conll>` | yes | Entity-level precision/recall/F1 (PER, ORG, LOC, GPE) against a CoNLL NER test set |
 
-```json
-{
-  "text": "Mu nimi on [XXX] ja email on [XXX]",
-  "items": [...]
-}
-```
+Each exits with `0` when everything passes.
 
-**Hash operator (consistent hashing):**
+### Code layout
 
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Mu nimi on Mart Kask",
-    "language": "xx",
-    "anonymizers": {
-      "DEFAULT": {
-        "type": "hash",
-        "hash_type": "sha256"
-      }
-    }
-  }'
-```
-
-**Response:**
-
-```json
-{
-  "text": "Mu nimi on 8c9a6b5e3d2f1a4b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
-  "items": [...]
-}
-```
-
-**Mask operator (partial masking):**
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Mu nimi on Mart Kask",
-    "language": "xx",
-    "anonymizers": {
-      "DEFAULT": {
-        "type": "mask",
-        "masking_char": "*",
-        "chars_to_mask": 5,
-        "from_end": true
-      }
-    }
-  }'
-```
-
-**Response:**
-
-```json
-{
-  "text": "Mu nimi on Mart*****",
-  "items": [...]
-}
-```
-
-**Redact operator (complete removal):**
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Contact Kalle Kask at kalle@example.com",
-    "language": "xx",
-    "anonymizers": {
-      "PERSON": {"type": "redact"},
-      "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL REMOVED]"}
-    }
-  }'
-```
-
-**Response:**
-
-```json
-{
-  "text": "Contact  at [EMAIL REMOVED]",
-  "items": [...]
-}
-```
-
-**Encrypt operator (reversible encryption):**
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Confidential ID: 38001085718",
-    "language": "xx",
-    "anonymizers": {
-      "EE_PERSONAL_CODE": {
-        "type": "encrypt",
-        "key": "WmZq4t7w!z%C&F)J"
-      }
-    }
-  }'
-```
-
-**Mix of operators (entity-specific):**
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Contact Mari Maasikas at mari@example.com or +372 5555 5555",
-    "language": "xx",
-    "anonymizers": {
-      "PERSON": {"type": "replace", "new_value": "[NAME]"},
-      "EMAIL_ADDRESS": {"type": "hash", "hash_type": "sha256"},
-      "PHONE_NUMBER": {"type": "mask", "masking_char": "X", "chars_to_mask": 4, "from_end": true}
-    }
-  }'
-```
-
-**Response:**
-
-```json
-{
-  "text": "Contact [NAME] at a3b2c1d4e5f6... or +372 5555 XXXX",
-  "items": [...]
-}
-```
-
-**Using DEFAULT with entity overrides:**
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "John Smith lives in Tallinn. Email: john@example.com, Phone: +372 5555 5555",
-    "language": "xx",
-    "anonymizers": {
-      "DEFAULT": {"type": "hash", "hash_type": "sha256"},
-      "EMAIL_ADDRESS": {"type": "replace", "new_value": "[EMAIL PROTECTED]"},
-      "LOCATION": {"type": "keep"}
-    }
-  }'
-```
-
-**Response:**
-
-```json
-{
-  "text": "a1b2c3d4e5f6... lives in Tallinn. Email: [EMAIL PROTECTED], Phone: f9e8d7c6b5a4...",
-  "items": [...]
-}
-```
-
-### Allowlist and Denylist Examples
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Mari Maasikas from Estonian Business Registry works in Tallinn.",
-    "language": "xx",
-    "allowlist": ["Estonian Business Registry", "Tallinn"]
-  }'
-```
-
-### Using Denylist for Sensitive Project Names
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Project Nightingale is classified. Contact Sarah for details.",
-    "language": "xx",
-    "denylist": ["Nightingale", "classified"]
-  }'
-```
-
-### Complex Example with Both Lists
-
-```bash
-curl -X POST http://localhost:8000/anonymize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "Contact Kalle Kask at Microsoft Estonia about Project Phoenix. Meeting in Tallinn tomorrow.",
-    "language": "xx",
-    "allowlist": ["Microsoft Estonia", "Tallinn"],
-    "denylist": ["Phoenix"],
-    "anonymizers": {
-      "PERSON": {"type": "replace", "new_value": "[NAME]"},
-      "DENYLIST_MATCH": {"type": "replace", "new_value": "[CLASSIFIED]"}
-    }
-  }'
-```
-
-**Result:**
-
-```
-Contact [NAME] at Microsoft Estonia about Project [CLASSIFIED]. Meeting in Tallinn tomorrow.
-```
+* `app.py` — Flask/Flask-RESTX server, request handling and Swagger models
+* `presidio_flask_estbert.py` — builds the Presidio analyzer from the YAML (NER recognizer, pattern
+  recognizers, thresholds) and implements allowlist/denylist handling
+* `utils.py` — Estonian case-form synthesis for allow/denylists (EstNLTK Vabamorf)
