@@ -83,7 +83,8 @@ With the default config:
 | `EMAIL_ADDRESS` | Presidio built-in |
 | `URL` | Pattern (file names such as `aruanne.pdf` are excluded); Presidio built-in |
 | `IP_ADDRESS` | Pattern: IPv4 and IPv6; Presidio built-in |
-| `IBAN_CODE`, `CREDIT_CARD` | Presidio built-in only — validated by mod-97 and Luhn |
+| `IBAN_CODE` | Pattern: any IBAN country, upper or lower case, checked by mod-97 |
+| `CREDIT_CARD` | Pattern: 13-19 digits starting 2-6, checked by Luhn |
 | `CRYPTO` | Pattern: Ethereum addresses; Presidio built-in (Bitcoin) |
 | `LOCATION` (coordinates) | Pattern: decimal (`59.4370, 24.7536`) and degree/DMS coordinates |
 | `DENYLIST_MATCH` | Words from the request's `denylist` |
@@ -253,8 +254,9 @@ Entity types the analyzer supports for the language, filtered to those in `entit
 ### `GET /recognizers?language=xx`
 
 Names of the registered recognizers: `EstBERT_NER_ONNX_Recognizer`, the pattern recognizers from the config
-(`EstonianPersonalCode`, `EstonianPhoneNumbers`, …) and Presidio's built-ins (`EmailRecognizer`,
-`IbanRecognizer`, …).
+(`EstonianPersonalCode`, `EstonianPhoneNumbers`, `IBANAllDigits`, `CreditCard`, …) and Presidio's
+built-ins (`EmailRecognizer`, `UrlRecognizer`, …). Presidio's `IbanRecognizer` and
+`CreditCardRecognizer` are removed in favour of the config's own patterns.
 
 ```json
 {"recognizers": ["EstBERT_NER_ONNX_Recognizer", "EstonianPersonalCode", "..."], "language": "xx", "count": 20}
@@ -330,10 +332,8 @@ entities_to_detect:
   - EE_PERSONAL_CODE
   # ...
 
-# Pattern recognizers. `validator:` is optional and names a check from
-# VALIDATORS in presidio_flask_estbert.py; a match that fails it is discarded
-# rather than reported. Currently only `ee_personal_code` exists, and no
-# shipped config switches it on - see Validators below.
+# Pattern recognizers. `validator:`, `validator_mode:` and `plausible:` are
+# optional - see Validators below.
 recognizers:
   - name: EstonianPersonalCode
     supported_language: xx
@@ -343,6 +343,15 @@ recognizers:
       - name: isikukood_pattern
         regex: "..."
         score: 0.95
+  - name: CreditCard
+    supported_language: xx
+    supported_entity: CREDIT_CARD
+    validator: luhn
+    validator_mode: strict
+    patterns:
+      - name: credit_card_grouped
+        regex: "..."
+        score: 0.9
 
 # Placeholders used when a request sends no `anonymizers`
 anonymization_config:
@@ -362,14 +371,18 @@ if a pattern over-matches, fix the regex.
 
 ### Overlapping detections
 
-Three rules decide who owns a piece of text, applied in this order:
+Four rules decide who owns a piece of text:
 
 * A **pattern beats the NER model**. A pattern either matched or it did not; a model span is a guess, and
   the model scores confidently enough to win on score alone. Where the two overlap and disagree on the
   entity type, the model's span is cut back rather than dropped — a model span over `Auto 123 ABC` keeps
   `Auto` once the plate is carved out of it, and the plate is reported as `CAR_NUMBER`, not
-  `ORGANIZATION`. Presidio's own built-ins count as patterns here: they are deterministic too, and the
-  validated ones are better evidence than any regex in the config.
+  `ORGANIZATION`. Presidio's own built-ins count as patterns here: they are deterministic too.
+* A **checked pattern beats an unchecked one** it half-covers. When a pattern without a validator (a
+  phone number, say) overlaps an IBAN or card that passed its checksum, the checked span is cut out of
+  it, and what is left is kept only if it still matches its own pattern on its own. `5685 2024` after an
+  IBAN ending in `5685` used to come out as an extra `[TELEFON]`; `+372 5512 3456` before a card is
+  still a phone number and stays one.
 * **Model spans separated only by spaces are merged** before the score filter, taking the higher score, so
   a name the model labelled one word at a time is not half dropped. `New Yorki` used to come back as
   `[GPE] Yorki`.
@@ -387,16 +400,36 @@ mapping that matches the fallback.
 ### Validators
 
 A pattern says what text looks like; a validator says whether it is real. A recognizer can name one with
-`validator:`, and Presidio then scores a verified match 1.0 and discards one that fails, so a shape-only
-match is not reported at the pattern's nominal confidence.
+`validator:`, and a match that passes it is scored 1.0. What happens to one that fails is set by
+`validator_mode:`:
+
+| Mode | A failed check | Use for |
+|---|---|---|
+| `strict` (default) | drops the match | shapes that occur by accident — sixteen digits are as often an order number as a card |
+| `boost` | keeps the match at the pattern's score | shapes distinctive enough that a failure means a typo |
+
+A `boost` recognizer can also name a `plausible:` check. A match that fails the validator is then kept only
+if it passes this one, so the benefit of the doubt goes to a typo and not to anything of the right shape.
 
 | Validator | Checks |
 |---|---|
 | `ee_personal_code` | The isikukood mod-11 check digit, and a first digit in 1-8 |
+| `luhn` | 13-19 digits and the Luhn check digit |
+| `iban` | A known country code, that country's IBAN length, and mod-97 |
+| `iban_shape` | A known country code and that country's IBAN length, no checksum |
 
-`IBAN_CODE` and `CREDIT_CARD` are not defined as patterns in the config at all: Presidio's own recognizers
-own them and verify mod-97 and Luhn respectively. A card-shaped number that fails Luhn is therefore not
-anonymized, which is deliberate.
+Separators (spaces, tabs, non-breaking spaces, dashes) are stripped before checking; line breaks never
+join two numbers into one. A match that fails a check does not hide a valid number inside it: it is
+retried shorter, so `EE38 2200 2210 2014 5685 2024` yields the IBAN without the year, and then from the
+next character on, so `2024 4242 4242 4242 4242` yields the card.
+
+How the shipped configs use them:
+
+| Recognizer | Validator | Mode | Effect |
+|---|---|---|---|
+| `IBANAllDigits` (EE, LT, DE, …) | `iban` | `boost`, `plausible: iban_shape` | An account with one digit wrong is still anonymised, as long as its country and length are real. A missed account leaks; a typo only over-redacts. |
+| `IBANAlphanumeric` (GB, NL, …) | `iban` | `strict` | Letters in the account part would let ordinary words match, so only a verified IBAN counts. |
+| `CreditCard` | `luhn` | `strict` | A card-shaped number that fails Luhn is not anonymised. |
 
 **`ee_personal_code` is not enabled in either shipped config.** Turning it on rejects personal codes with an
 invalid check digit — which is correct, but invented test data usually has one, so enable it together with
@@ -452,8 +485,8 @@ not run them.
 | `tests/test_patterns.py [--config …]` | no | YAML regex patterns against expected matches |
 | `tests/test_thresholds.py` | no | Score-threshold filtering: patterns exempt, model and built-ins not |
 | `tests/test_spans.py` | no | Merging of model spans the NER split across words |
-| `tests/test_precedence.py` | no | Who owns text a pattern and a model span both claim |
-| `tests/test_validators.py` | no | The isikukood check digit |
+| `tests/test_precedence.py` | no | Who owns text that a pattern, a checked pattern and a model span claim |
+| `tests/test_validators.py` | no | The isikukood, Luhn, IBAN and IBAN-shape checks |
 | `tests/test_gov_chats.py [--url …]` | yes | End-to-end cases from government chat texts |
 | `tests/eval_conll.py <file.conll>` | yes | Entity-level precision/recall/F1 (PER, ORG, LOC, GPE) against a CoNLL NER test set |
 
