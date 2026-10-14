@@ -9,7 +9,7 @@ from presidio_analyzer import (
 )
 from presidio_analyzer.nlp_engine import NlpArtifacts, NlpEngineProvider
 from presidio_analyzer.entity_recognizer import EntityRecognizer
-from typing import Callable, List, Optional
+from typing import Callable, Iterator, List, Optional
 import logging
 import os
 import re
@@ -68,6 +68,12 @@ ABBREVIATIONS = frozenset(
 entity_score_thresholds: dict[str, float] = {}
 default_score_threshold: float = 0.8
 pattern_recognizer_names: set[str] = set()
+# The subset whose matches have passed a checksum (`validator:` in the YAML).
+# apply_pattern_precedence() lets them win a partial overlap.
+checked_recognizer_names: set[str] = set()
+# Each YAML recognizer's compiled patterns, by recognizer name, so a span cut
+# down by apply_pattern_precedence() can be checked against its own shape.
+pattern_regexes: dict[str, List[re.Pattern[str]]] = {}
 
 
 class EstBERTRecognizerONNX(EntityRecognizer):
@@ -635,6 +641,14 @@ def is_pattern_result(result: RecognizerResult) -> bool:
     return source in pattern_recognizer_names
 
 
+def is_checked_result(result: RecognizerResult) -> bool:
+    """True if a recognizer with a `validator:` produced this result."""
+    source = (result.recognition_metadata or {}).get(
+        RecognizerResult.RECOGNIZER_NAME_KEY
+    )
+    return source in checked_recognizer_names
+
+
 def is_model_result(result: RecognizerResult) -> bool:
     """True if the NER model produced this result."""
     source = (result.recognition_metadata or {}).get(
@@ -664,20 +678,22 @@ def apply_pattern_precedence(
     duplicate, not a mislabel, and Presidio already settles those.
 
     The model's spans yield to every other recognizer, Presidio's built-ins
-    included - those are deterministic too, and the validated ones (IBAN by
-    mod-97, cards by Luhn, e-mail by its TLD check) are better evidence than
-    anything here. Leaving them out was not an option either: a model span
+    included - those are deterministic too, and the validated ones (e-mail by
+    its TLD check, and our own IBAN and card patterns by mod-97 and Luhn) are
+    better evidence than anything here. Leaving them out was not an option either: a model span
     reading "Konto EE38" half-covers the IBAN beside it, and a partial overlap
     makes the anonymizer write both spans, so the text came back with "EE38"
     in it twice.
 
-    What never happens is the reverse - one of our patterns carving a
-    built-in. Cutting our unvalidated card pattern out of a verified IBAN
-    split one account number into "[PANGAKONTO] [PANGAKAART]".
+    What never happens is one non-model span carving another. Cutting a card
+    match out of the IBAN around it split one account number into
+    "[PANGAKONTO] [PANGAKAART]"; left alone, the card span sits wholly inside
+    the IBAN and the anonymizer drops it as contained.
     """
     blockers = [result for result in results if not is_model_result(result)]
     if not blockers:
         return results
+    results = trim_straddlers_of_checked(results, text)
 
     kept: List[RecognizerResult] = []
     for result in results:
@@ -722,6 +738,77 @@ def apply_score_thresholds(
                 f"Dropped {result.entity_type} '{text[result.start : result.end]}' "
                 f"scoring {result.score:.2f} below {threshold}"
             )
+    return kept
+
+
+def trim_straddlers_of_checked(
+    results: List[RecognizerResult], text: str
+) -> List[RecognizerResult]:
+    """Cut a checksummed span out of an unchecked pattern span that half-covers it.
+
+    In "EE38 2200 2210 2014 5685 2024" the IBAN ends before the year, and the
+    phone pattern reads the last group and the year, "5685 2024", as a number.
+    The two spans partly overlap, which the anonymizer has no rule for: it
+    wrote "[PANGAKONTO][TELEFON]", swallowing the year and the space before
+    it. The IBAN passed mod-97; the phone match is a shape, so the IBAN keeps
+    the shared text.
+
+    What is left of the phone span is kept only if it still is what its
+    recognizer looks for - a whole match of one of its own patterns. "2024" is
+    not a phone number and is left as text. In "+372 5512 3456 4242 4242 4242
+    4242" the phone pattern runs into the card, and "+372 5512 3456" is one, so
+    it stays anonymised: dropping the span whole would have printed it.
+
+    Only a partial overlap with a different type counts. One span inside
+    another is settled by the anonymizer, and two checked spans are left to
+    it as well.
+    """
+    checked = [result for result in results if is_checked_result(result)]
+    if not checked:
+        return results
+
+    kept: List[RecognizerResult] = []
+    for result in results:
+        if not is_pattern_result(result) or is_checked_result(result):
+            kept.append(result)
+            continue
+        straddled = [
+            other
+            for other in checked
+            if other.entity_type != result.entity_type
+            and result.start < other.end
+            and other.start < result.end
+            and not (result.start <= other.start and other.end <= result.end)
+            and not (other.start <= result.start and result.end <= other.end)
+        ]
+        if not straddled:
+            kept.append(result)
+            continue
+
+        source = (result.recognition_metadata or {}).get(
+            RecognizerResult.RECOGNIZER_NAME_KEY, ""
+        )
+        own_patterns = pattern_regexes.get(source, [])
+        for piece in subtract_spans(result, straddled, text):
+            # subtract_spans trims punctuation off both ends, which takes the
+            # "+" off "+372 5512 3456"; give back what the original span had.
+            while (
+                piece.start > result.start
+                and not text[piece.start - 1].isspace()
+                and not text[piece.start - 1].isalnum()
+            ):
+                piece.start -= 1
+            if any(
+                regex.fullmatch(text, piece.start, piece.end) for regex in own_patterns
+            ):
+                piece.recognition_metadata = result.recognition_metadata
+                kept.append(piece)
+            else:
+                logger.debug(
+                    f"Dropped {result.entity_type} remainder "
+                    f"[{piece.start}:{piece.end}] after a checksummed span "
+                    f"took the rest"
+                )
     return kept
 
 
@@ -804,28 +891,246 @@ def validate_ee_personal_code(text: str) -> bool:
     return remainder == digits[10]
 
 
+# Spaces, non-breaking spaces and hyphens are how card and account numbers are
+# grouped when written out; none of them is part of the number.
+_NUMBER_SEPARATORS = re.compile(r"[\s\-]")
+
+
+def validate_luhn(text: str) -> bool:
+    """Check a payment card number's Luhn check digit.
+
+    Card numbers run 13-19 digits. Every second digit from the right is doubled
+    (subtracting 9 when that exceeds 9) and the total must be a multiple of 10.
+
+    One in ten digit runs passes Luhn by chance, and a rejected match is
+    searched again from inside (ValidatingPatternRecognizer.analyze), so the
+    lower bound is what keeps the tail of a rejected number - "5678 9012 3456"
+    of "1234 5678 9012 3456" - from coming back as a card.
+    """
+    digits = _NUMBER_SEPARATORS.sub("", text)
+    if not re.fullmatch(r"[0-9]{13,19}", digits):
+        return False
+
+    total = 0
+    for position, character in enumerate(reversed(digits)):
+        digit = int(character)
+        if position % 2 == 1:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        total += digit
+    return total % 10 == 0
+
+
+# IBAN length per country, from the ISO 13616 registry. A country that is not
+# here does not issue IBANs, so two letters in front of a number are not one.
+IBAN_LENGTHS: dict[str, int] = {
+    "AD": 24, "AE": 23, "AL": 28, "AT": 20, "AZ": 28, "BA": 20, "BE": 16,
+    "BG": 22, "BH": 22, "BI": 27, "BR": 29, "BY": 28, "CH": 21, "CR": 22,
+    "CY": 28, "CZ": 24, "DE": 22, "DJ": 27, "DK": 18, "DO": 28, "EE": 20,
+    "EG": 29, "ES": 24, "FI": 18, "FK": 18, "FO": 18, "FR": 27, "GB": 22,
+    "GE": 22, "GI": 23, "GL": 18, "GR": 27, "GT": 28, "HN": 28, "HR": 21,
+    "HU": 28, "IE": 22, "IL": 23, "IQ": 23, "IS": 26, "IT": 27, "JO": 30,
+    "KW": 30, "KZ": 20, "LB": 28, "LC": 32, "LI": 21, "LT": 20, "LU": 20,
+    "LV": 21, "LY": 25, "MC": 27, "MD": 24, "ME": 22, "MK": 19, "MN": 20,
+    "MR": 27, "MT": 31, "MU": 30, "NI": 28, "NL": 18, "NO": 15, "OM": 23,
+    "PK": 24, "PL": 28, "PS": 29, "PT": 25, "QA": 29, "RO": 24, "RS": 22, "RU": 33,
+    "SA": 24, "SC": 31, "SD": 18, "SE": 24, "SI": 19, "SK": 24, "SM": 27,
+    "SO": 23, "ST": 25, "SV": 28, "TL": 23, "TN": 24, "TR": 26, "UA": 29,
+    "VA": 22, "VG": 24, "XK": 20, "YE": 30,
+}  # fmt: skip
+
+
+def _compact_iban(text: str) -> str:
+    return _NUMBER_SEPARATORS.sub("", text).upper()
+
+
+def validate_iban_shape(text: str) -> bool:
+    """Check that an IBAN has a real country code and that country's length.
+
+    This is what survives a typo: a mistyped digit leaves both intact, while a
+    serial number such as "SN12 3456 7890 1234" has neither.
+    """
+    compact = _compact_iban(text)
+    if not re.fullmatch(r"[A-Z]{2}[0-9]{2}[A-Z0-9]+", compact):
+        return False
+    return IBAN_LENGTHS.get(compact[:2]) == len(compact)
+
+
+def validate_iban(text: str) -> bool:
+    """Check an IBAN in full: country, length and mod-97 check digits.
+
+    Case and grouping are not part of the number: "ee38 2200 ..." is the same
+    account as "EE382200...". The first four characters move to the end, each
+    letter becomes two digits (A=10 ... Z=35), and the result modulo 97 must be 1.
+    """
+    if not validate_iban_shape(text):
+        return False
+
+    compact = _compact_iban(text)
+    rearranged = compact[4:] + compact[:4]
+    numeric = "".join(str(int(character, 36)) for character in rearranged)
+    return int(numeric) % 97 == 1
+
+
 # Validators a YAML recognizer can ask for by name, with `validator:`. A
 # pattern describes a shape; a validator decides whether that shape is a real
 # identifier, which is the one thing a regex cannot do.
 VALIDATORS: dict[str, Callable[[str], bool]] = {
     "ee_personal_code": validate_ee_personal_code,
+    "luhn": validate_luhn,
+    "iban": validate_iban,
+    "iban_shape": validate_iban_shape,
 }
+
+# What a failed check does, set per recognizer with `validator_mode:`.
+#
+#   strict  the match is dropped. For shapes that occur by accident - sixteen
+#           digits are as often an order or reference number as a card.
+#   boost   the match is kept at the pattern's score; only a pass changes it,
+#           to 1.0. For shapes distinctive enough that a failed check means a
+#           typo rather than a coincidence: "EE38 2200 ..." with one digit
+#           wrong is still someone's account number, and a missed entity leaks
+#           where a false positive only over-redacts.
+#
+# A boost recognizer can also name a `plausible:` check, from VALIDATORS. A
+# match that fails the validator is then kept only if it passes this one, so
+# the benefit of the doubt goes to a typo and not to anything of the shape.
+VALIDATOR_MODES = ("strict", "boost")
+
+
+_WORD_CHARACTER = re.compile(r"\w")
+
+
+def find_validated_matches(
+    regex: re.Pattern[str],
+    text: str,
+    judge: Callable[[str], Optional[bool]],
+) -> Iterator[tuple[int, int, Optional[bool]]]:
+    """Yield (start, end, verdict) for each match `judge` does not reject.
+
+    `judge` returns True (verified), None (kept at the pattern's score) or
+    False (rejected). Presidio walks matches with finditer, which resumes after
+    a match's end whether or not it was accepted, and that loses real numbers
+    in two ways:
+
+      too long   A greedy pattern takes whatever digits follow, and the whole
+                 then fails: "EE38 2200 2210 2014 5685 2024" is too long for an
+                 Estonian IBAN, so the account inside it was never reported.
+                 A rejected match is tried again from the same start, shorter,
+                 ending only where a match could end anyway - before a
+                 separator, never mid-token - longest first.
+      too early  A match that starts too soon hides one inside it: in
+                 "2024 4242 4242 4242 4242" the year and three groups fail
+                 Luhn, and the card one group later was never tried. If no
+                 shorter match is accepted either, the search resumes one
+                 character after the start rather than after the end.
+    """
+    position = 0
+    while (match := regex.search(text, position)) is not None:
+        start, end = match.span()
+        if start == end:
+            position = end + 1
+            continue
+
+        accepted: Optional[tuple[int, Optional[bool]]] = None
+        verdict = judge(text[start:end])
+        if verdict is not False:
+            accepted = (end, verdict)
+        else:
+            for shorter_end in range(end - 1, start, -1):
+                if _WORD_CHARACTER.match(text, shorter_end):
+                    continue
+                if regex.fullmatch(text, start, shorter_end) is None:
+                    continue
+                verdict = judge(text[start:shorter_end])
+                if verdict is not False:
+                    accepted = (shorter_end, verdict)
+                    break
+
+        if accepted is None:
+            position = start + 1
+            continue
+        accepted_end, verdict = accepted
+        yield start, accepted_end, verdict
+        position = accepted_end
 
 
 class ValidatingPatternRecognizer(PatternRecognizer):
     """A PatternRecognizer that checks its matches before reporting them.
 
-    Presidio scores a validated match 1.0 and an invalidated one 0, so a
-    shape-only match disappears instead of being reported with the pattern's
-    nominal confidence.
+    Presidio scores a validated match 1.0 and an invalidated one 0, so in
+    strict mode a shape-only match disappears instead of being reported with
+    the pattern's nominal confidence. In boost mode a failed check reports
+    nothing, which leaves the match at the pattern's own score - unless a
+    `plausible` check is given and fails too.
     """
 
-    def __init__(self, validator: Callable[[str], bool], **kwargs: object) -> None:
+    def __init__(
+        self,
+        validator: Callable[[str], bool],
+        strict: bool = True,
+        plausible: Optional[Callable[[str], bool]] = None,
+        **kwargs: object,
+    ) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
         self._validator = validator
+        self._strict = strict
+        self._plausible = plausible
 
-    def validate_result(self, pattern_text: str) -> bool:
-        return self._validator(pattern_text)
+    def validate_result(self, pattern_text: str) -> Optional[bool]:
+        if self._validator(pattern_text):
+            return True
+        if self._strict:
+            return False
+        if self._plausible is not None and not self._plausible(pattern_text):
+            return False
+        return None
+
+    def analyze(
+        self,
+        text: str,
+        entities: List[str],
+        nlp_artifacts: Optional[NlpArtifacts] = None,
+        regex_flags: Optional[int] = None,
+    ) -> List[RecognizerResult]:
+        """Match like PatternRecognizer, but look again after a rejected match.
+
+        See find_validated_matches() for what "again" means.
+        """
+        flags: int = regex_flags or self.global_regex_flags or 0
+        results: List[RecognizerResult] = []
+        for pattern in self.patterns:
+            regex = re.compile(pattern.regex, flags)
+            for start, end, validation_result in find_validated_matches(
+                regex, text, self.validate_result
+            ):
+                score = (
+                    EntityRecognizer.MAX_SCORE if validation_result else pattern.score
+                )
+                description = self.build_regex_explanation(
+                    self.name,
+                    pattern.name,
+                    pattern.regex,
+                    pattern.score,
+                    validation_result,  # type: ignore[arg-type]
+                    flags,
+                )
+                description.score = score
+                results.append(
+                    RecognizerResult(
+                        entity_type=self.supported_entities[0],
+                        start=start,
+                        end=end,
+                        score=score,
+                        analysis_explanation=description,
+                        recognition_metadata={
+                            RecognizerResult.RECOGNIZER_NAME_KEY: self.name,
+                            RecognizerResult.RECOGNIZER_IDENTIFIER_KEY: self.id,
+                        },
+                    )
+                )
+        return EntityRecognizer.remove_duplicates(results)
 
 
 def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecognizer]:
@@ -860,9 +1165,31 @@ def create_pattern_recognizers(config: dict, language: str) -> List[PatternRecog
                     f"reporting matches unvalidated"
                 )
 
+            # An unrecognised mode falls back to boost: a misspelt setting
+            # should over-redact, not silently start dropping matches.
+            validator_mode = rec_config.get("validator_mode", "strict")
+            if validator_mode not in VALIDATOR_MODES:
+                logger.error(
+                    f"  Unknown validator_mode '{validator_mode}' for {name}; "
+                    f"using 'boost'"
+                )
+                validator_mode = "boost"
+
+            # Same fallback for the plausibility check: an unknown name keeps
+            # every failed match, as boost mode without one would.
+            plausible_name = rec_config.get("plausible")
+            plausible = VALIDATORS.get(plausible_name) if plausible_name else None
+            if plausible_name and plausible is None:
+                logger.error(
+                    f"  Unknown plausible check '{plausible_name}' for {name}; "
+                    f"keeping every match that fails validation"
+                )
+
             if validator is not None:
                 recognizer = ValidatingPatternRecognizer(
                     validator=validator,
+                    strict=validator_mode == "strict",
+                    plausible=plausible,
                     supported_entity=supported_entity,
                     patterns=patterns,
                     name=name,
@@ -912,12 +1239,15 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
     # cut to model spans and pattern matches alike, and it runs before
     # apply_score_thresholds() can tell them apart.
     global entity_score_thresholds, default_score_threshold, pattern_recognizer_names
+    global checked_recognizer_names, pattern_regexes
     default_score_threshold = float(config.get("default_score_threshold", 0.8))
     entity_score_thresholds = {
         str(entity): float(score)
         for entity, score in (config.get("entity_score_thresholds") or {}).items()
     }
     pattern_recognizer_names = set()
+    checked_recognizer_names = set()
+    pattern_regexes = {}
     logger.info(
         f"Score thresholds: default {default_score_threshold}, "
         f"per-entity {entity_score_thresholds or 'none'}, "
@@ -942,7 +1272,20 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
     # as people: Töötukassas, Vabariigi Valitsus, Tallinna Linnavalitsusele. The
     # Estonian model labels all of those correctly. spaCy stays as the NlpEngine
     # for tokenisation and lemmas; it just no longer contributes entities.
-    unwanted_recognizers = ["MedicalLicenseRecognizer", "SpacyRecognizer"]
+    #
+    # CreditCardRecognizer and IbanRecognizer are replaced by the YAML
+    # recognizers of the same entities, which run the same Luhn and mod-97
+    # checks. The built-ins only match a card starting 1, 3, 4, 50-55 or 6
+    # (missing Mastercard 2221-2720 and Maestro 56-58), only an upper-case
+    # IBAN, and only "-" or " " as a separator, so a lower-case account number
+    # or a card pasted with non-breaking spaces went unanonymised. Keeping them
+    # alongside would leave two owners for one entity.
+    unwanted_recognizers = [
+        "MedicalLicenseRecognizer",
+        "SpacyRecognizer",
+        "CreditCardRecognizer",
+        "IbanRecognizer",
+    ]
     for recognizer_name in unwanted_recognizers:
         try:
             analyzer.registry.remove_recognizer(recognizer_name)
@@ -974,6 +1317,12 @@ def load_presidio_from_config(config_path: str) -> AnalyzerEngine:
             for recognizer in pattern_recognizers:
                 analyzer.registry.add_recognizer(recognizer)
                 pattern_recognizer_names.add(recognizer.name)
+                if isinstance(recognizer, ValidatingPatternRecognizer):
+                    checked_recognizer_names.add(recognizer.name)
+                pattern_regexes[recognizer.name] = [
+                    re.compile(pattern.regex, recognizer.global_regex_flags or 0)
+                    for pattern in recognizer.patterns
+                ]
             logger.info(f"  ✓ {len(pattern_recognizers)} pattern recognizers added")
         except Exception as e:
             logger.error(f"  ✗ Pattern recognizers failed: {e}")

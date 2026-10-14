@@ -2,7 +2,10 @@
 
 apply_pattern_precedence() decides who owns text that a YAML pattern and a
 model span both claim. The pattern wins the overlap and the model span is cut
-back rather than dropped. Runs without a container or a model:
+back rather than dropped. Between patterns, a checksummed span (IBAN, card)
+beats an unchecked one that half-covers it, which keeps only a remainder that
+still matches its own pattern. Runs without a
+container or a model:
 
     uv run python tests/test_precedence.py
 
@@ -11,8 +14,11 @@ Exit code is 0 when every case passes, 1 otherwise.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
+
+import yaml
 
 from presidio_analyzer import RecognizerResult
 
@@ -22,7 +28,19 @@ import presidio_flask_estbert as engine  # noqa: E402
 
 PATTERN = "EstonianCarNumber"
 MODEL = "EstBERT_NER_ONNX_Recognizer"
-BUILTIN = "IbanRecognizer"
+PHONE = "EstonianPhoneNumbers"
+CHECKED = "IBANAllDigits"
+# The real phone pattern, since what survives a trim depends on it.
+PHONE_REGEX = next(
+    pattern["regex"]
+    for recognizer in yaml.safe_load(
+        (
+            Path(__file__).resolve().parent.parent / "config/presidio-spacy-estbert.yml"
+        ).read_text(encoding="utf-8")
+    )["recognizers"]
+    if recognizer["name"] == PHONE
+    for pattern in recognizer["patterns"]
+)
 
 
 def result(
@@ -44,7 +62,15 @@ def shape(text: str, results: list[RecognizerResult]) -> list[tuple[str, str]]:
 
 
 def run() -> int:
-    engine.pattern_recognizer_names = {PATTERN, "WebSite", "Coordinates"}
+    engine.pattern_recognizer_names = {
+        PATTERN,
+        "WebSite",
+        "Coordinates",
+        PHONE,
+        CHECKED,
+    }
+    engine.checked_recognizer_names = {CHECKED}
+    engine.pattern_regexes = {PHONE: [re.compile(PHONE_REGEX, re.IGNORECASE)]}
 
     t1 = "Auto 123 abc sai trahvi."
     t2 = "Nägin autot 123 abc."
@@ -52,6 +78,9 @@ def run() -> int:
     t4 = "Koht 59.4370, 24.7536 on siin."
     t5 = "Jaan Tamm helistas."
     t6 = "Konto EE38 2200 2210 2014 5685 on avatud."
+    t7 = "Konto EE38 2200 2210 2014 5685 2024. aastast."
+    t8 = "Kaart 4242 4242 4242 4242, telefon 5550 1234."
+    t9 = "Tel +372 5512 3456 4242 4242 4242 4242"
 
     cases: list[tuple[str, str, list[RecognizerResult], list[tuple[str, str]]]] = [
         (
@@ -92,13 +121,12 @@ def run() -> int:
         ),
         (
             "a validated built-in is never carved by one of our patterns",
-            # IbanRecognizer verifies mod-97 and scores 1.0; our credit-card
-            # pattern happily matches four digit groups inside that account
-            # number. Carving it split one IBAN into
-            # "[PANGAKONTO] [PANGAKAART]".
+            # A card match sits wholly inside the IBAN. Carving it out split
+            # one account number into "[PANGAKONTO] [PANGAKAART]"; left alone,
+            # the anonymizer drops it as contained.
             t6,
             [
-                result(t6, "EE38 2200 2210 2014 5685", "IBAN_CODE", BUILTIN, 1.0),
+                result(t6, "EE38 2200 2210 2014 5685", "IBAN_CODE", CHECKED, 1.0),
                 result(t6, "2200 2210 2014 5685", "CREDIT_CARD", PATTERN),
             ],
             [
@@ -113,7 +141,7 @@ def run() -> int:
             t6,
             [
                 result(t6, "Konto EE38", "ORGANIZATION", MODEL, 0.98),
-                result(t6, "EE38 2200 2210 2014 5685", "IBAN_CODE", BUILTIN, 1.0),
+                result(t6, "EE38 2200 2210 2014 5685", "IBAN_CODE", CHECKED, 1.0),
             ],
             [("IBAN_CODE", "EE38 2200 2210 2014 5685"), ("ORGANIZATION", "Konto")],
         ),
@@ -122,6 +150,54 @@ def run() -> int:
             t5,
             [result(t5, "Jaan Tamm", "PERSON", MODEL, 0.98)],
             [("PERSON", "Jaan Tamm")],
+        ),
+        (
+            "a half-covering remainder that is no longer a phone number is dropped",
+            # The phone pattern read the IBAN's last group and the year after
+            # it as a number, and the anonymizer wrote both placeholders.
+            t7,
+            [
+                result(t7, "EE38 2200 2210 2014 5685", "IBAN_CODE", CHECKED, 1.0),
+                result(t7, "5685 2024", "PHONE_NUMBER", PHONE),
+            ],
+            [("IBAN_CODE", "EE38 2200 2210 2014 5685")],
+        ),
+        (
+            "a half-covering remainder that still is a phone number is kept",
+            # Dropping the phone span whole printed "+372 5512 3456".
+            t9,
+            [
+                result(t9, "+372 5512 3456 4242", "PHONE_NUMBER", PHONE),
+                result(t9, "4242 4242 4242 4242", "CREDIT_CARD", CHECKED, 1.0),
+            ],
+            [
+                ("CREDIT_CARD", "4242 4242 4242 4242"),
+                ("PHONE_NUMBER", "+372 5512 3456"),
+            ],
+        ),
+        (
+            "an unchecked pattern inside a checksummed span is left to the anonymizer",
+            t6,
+            [
+                result(t6, "EE38 2200 2210 2014 5685", "IBAN_CODE", CHECKED, 1.0),
+                result(t6, "2014 5685", "PHONE_NUMBER", PHONE),
+            ],
+            [
+                ("IBAN_CODE", "EE38 2200 2210 2014 5685"),
+                ("PHONE_NUMBER", "2014 5685"),
+            ],
+        ),
+        (
+            "an unchecked pattern clear of the checksummed span is kept",
+            t8,
+            [
+                result(t8, "4242 4242 4242 4242", "CREDIT_CARD", CHECKED, 1.0),
+                result(t8, "5550 1234", "PHONE_NUMBER", PHONE),
+            ],
+            [
+                ("CREDIT_CARD", "4242 4242 4242 4242"),
+                ("PHONE_NUMBER", "5550 1234"),
+            ],
         ),
         (
             "with no pattern results the model output passes straight through",
