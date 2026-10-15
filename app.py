@@ -110,6 +110,17 @@ class EstonianPresidioFlaskServer:
             logger.error(f"Failed to initialize Presidio engines: {e}")
             raise
 
+    def model_description(self) -> str:
+        """Name the models actually in use, for /health.
+
+        Built from the loaded config rather than written out, so it cannot drift
+        from what was loaded the way the previous literal did.
+        """
+        transformer = self.config.get("estbert_configuration", {}).get("model_name")
+        nlp_engine = self.config.get("nlp_configuration", {}).get("nlp_engine_name")
+        parts = [part for part in (transformer, nlp_engine) if part]
+        return " + ".join(parts) if parts else "unknown"
+
     def _define_api_models(self) -> None:
         """Define Flask-RESTX models for request/response validation and documentation"""
 
@@ -414,7 +425,11 @@ Entity-specific operators override DEFAULT.""",
                     "supported_languages": server_instance.config.get(
                         "supported_languages", ["xx"]
                     ),
-                    "model": "tartuNLP/EstBERT_NER + spaCy",
+                    # Reported from the loaded config. This used to be a
+                    # literal, so /health named a model the service was not
+                    # running - it still said EstBERT after the switch to
+                    # xlm-roberta.
+                    "model": server_instance.model_description(),
                 }, 200
 
         logger.info(
@@ -893,15 +908,20 @@ Returns the active configuration including:
                         "nlp_engine": server_instance.config.get(
                             "nlp_configuration", {}
                         ).get("nlp_engine_name"),
+                        # The key is "recognizers"; reading "custom_recognizers"
+                        # meant this list was always empty, whatever the config
+                        # defined. A recognizer carries patterns, not a "type".
                         "custom_recognizers": [
                             {
                                 "name": rec.get("name"),
-                                "type": rec.get("type"),
                                 "supported_entity": rec.get("supported_entity"),
+                                "supported_language": rec.get("supported_language"),
+                                "patterns": [
+                                    pattern.get("name")
+                                    for pattern in rec.get("patterns", [])
+                                ],
                             }
-                            for rec in server_instance.config.get(
-                                "custom_recognizers", []
-                            )
+                            for rec in server_instance.config.get("recognizers", [])
                         ],
                     }
                     return safe_config, 200
