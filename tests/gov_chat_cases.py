@@ -705,6 +705,53 @@ BEHAVIOUR_CASES: list[dict] = [
         "expect_kept": ["38001085718", "5551234"],
         "expect_removed": ["Jaan Tamm"],
     },
+    # buerokratt/Presidio-Anonymizer#44: an explicit empty entity selection
+    # used to widen back to every configured entity, so deselecting all of them
+    # in the admin UI still anonymized the text.
+    {
+        "id": "F08",
+        "group": "F. Operators",
+        "desc": "Empty entities list anonymizes nothing (default operators)",
+        "payload": {
+            "texts": ["Minu number on +37268000769 ja e-post jaan@eesti.ee."],
+            "entities": [],
+        },
+        "expect_per_text": [
+            {"exact_text": "Minu number on +37268000769 ja e-post jaan@eesti.ee."}
+        ],
+    },
+    {
+        "id": "F09",
+        "group": "F. Operators",
+        "desc": "Empty entities list anonymizes nothing (DEFAULT mask)",
+        "payload": {
+            "texts": ["Minu number on +37268000769 ja e-post jaan@eesti.ee."],
+            "entities": [],
+            "anonymizers": {
+                "DEFAULT": {
+                    "type": "mask",
+                    "masking_char": "x",
+                    "chars_to_mask": 6,
+                    "from_end": False,
+                }
+            },
+        },
+        "expect_per_text": [
+            {"exact_text": "Minu number on +37268000769 ja e-post jaan@eesti.ee."}
+        ],
+    },
+    {
+        "id": "F10",
+        "group": "F. Operators",
+        "desc": "Empty entities list still applies the denylist",
+        "payload": {
+            "texts": ["Projekt Phoenix, number +37268000769, e-post jaan@eesti.ee."],
+            "entities": [],
+            "denylist": ["Phoenix"],
+        },
+        "expect_removed": ["Phoenix"],
+        "expect_kept": ["+37268000769", "jaan@eesti.ee"],
+    },
     {
         "id": "H01",
         "group": "H. Robustness",
