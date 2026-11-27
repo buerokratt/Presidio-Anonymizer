@@ -1379,20 +1379,28 @@ def analyze_with_lists(
         logger.error(f"Failed to get recognizers: {e}")
         raise
 
-    try:
-        results = analyzer.analyze(
-            text=text,
-            entities=entities,
-            language=language,
-            return_decision_process=return_decision_process,
-            correlation_id=correlation_id,
-        )
-        results = apply_score_thresholds(results, text)
-        results = apply_pattern_precedence(results, text)
-        logger.info(f"  Found {len(results)} entities")
-    except Exception as e:
-        logger.error(f"  Analysis failed: {e}", exc_info=True)
-        raise
+    # Presidio reads an empty entity list as "detect everything", so a caller
+    # that deselected every entity got all of them anonymized. An empty list
+    # here means nothing was selected: skip analysis, leaving only the
+    # denylist, which the caller asked for explicitly.
+    results: List[RecognizerResult] = []
+    if entities:
+        try:
+            results = analyzer.analyze(
+                text=text,
+                entities=entities,
+                language=language,
+                return_decision_process=return_decision_process,
+                correlation_id=correlation_id,
+            )
+            results = apply_score_thresholds(results, text)
+            results = apply_pattern_precedence(results, text)
+            logger.info(f"  Found {len(results)} entities")
+        except Exception as e:
+            logger.error(f"  Analysis failed: {e}", exc_info=True)
+            raise
+    else:
+        logger.info("  No entities selected, skipping analysis")
 
     # Apply allowlist
     if allowlist:

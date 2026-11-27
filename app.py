@@ -295,7 +295,7 @@ Entity-specific operators override DEFAULT.""",
                 ),
                 "entities": fields.List(
                     fields.String,
-                    description="Specific entity types to anonymize (if not provided, uses all configured)",
+                    description="Specific entity types to anonymize (omit to use all configured; an empty array anonymizes no entities, only denylist matches)",
                     example=["PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER"],
                 ),
                 "allowlist": fields.List(
@@ -510,7 +510,7 @@ See endpoint teostab kaks toimingut:
 - **texts** (nõutud): Tekstid, mida analüüsida ja anonümiseerida
 - **language** (valikuline, vaikimisi "xx"): Keele kood
 - **anonymizers** (valikuline): Anonümiseerimise operaatorid entiteedi tüüpide kaupa või DEFAULT kõigile
-- **entities** (valikuline): Konkreetsed entiteedi tüübid, mida anonümiseerida (kui puudub, kasutatakse kõiki konfigureeritud)
+- **entities** (valikuline): Konkreetsed entiteedi tüübid, mida anonümiseerida (kui puudub, kasutatakse kõiki konfigureeritud; tühi massiiv ei anonümiseeri ühtegi entiteeti, ainult keelunimekirja vasteid)
 - **allowlist** (valikuline): Sõnad/fraasid, mida EI anonümiseerita (tõstutundetu). Need sõnad sünteesitakse automaatselt kõigis käänetes kasutades EstNLTK Vabamorf teeki, et arvestada eesti keele morfoloogiaga. Näiteks "Microsoft" → ["Microsoft", "Microsofti", "Microsoftis", ...]. See tagab, et ettevõtte nimed ja muud olulised terminid jäävad kõigis vormides anonüümimata.
 - **denylist** (valikuline): Sõnad/fraasid, mida ALATI anonümiseeritakse kui DENYLIST_MATCH (tõstutundetu). Nagu allowlist, sünteesitakse ka denylist sõnad automaatselt kõigis eesti keele käänetes. Näiteks konfidentsiaalse projekti nimi "Phoenix" → ["Phoenix", "Phoenixi", "Phoenixis", ...]. See võimaldab tuvastada ja varjata konfidentsiaalset informatsiooni sõltumata grammatilisest vormist tekstis.
 
@@ -584,21 +584,25 @@ Endpoint tagastab `results` massiivi, kus iga element vastab ühele sisendteksti
                     denylist = data.get("denylist", [])
                     denylist = synthesize_all(denylist)
 
-                    # Use entities from request or default from config
-                    entities_to_detect = entities or server_instance.config.get(
-                        "entities_to_detect",
-                        [
-                            "PERSON",
-                            "ORGANIZATION",
-                            "LOCATION",
-                            "DATE_TIME",
-                            "EMAIL_ADDRESS",
-                            "PHONE_NUMBER",
-                            "URL",
-                            "IP_ADDRESS",
-                            "GPE",
-                        ],
-                    )
+                    # Only a missing field falls back to the configured entities.
+                    # An explicit empty list means the caller deselected every
+                    # entity and must not be widened back to all of them.
+                    entities_to_detect = entities
+                    if entities_to_detect is None:
+                        entities_to_detect = server_instance.config.get(
+                            "entities_to_detect",
+                            [
+                                "PERSON",
+                                "ORGANIZATION",
+                                "LOCATION",
+                                "DATE_TIME",
+                                "EMAIL_ADDRESS",
+                                "PHONE_NUMBER",
+                                "URL",
+                                "IP_ADDRESS",
+                                "GPE",
+                            ],
+                        )
 
                     # Setup anonymization operators
                     operators = {}
